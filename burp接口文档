@@ -1,0 +1,13 @@
+ 接口介绍文档规范：
+ 
+ ```java
+IRequestInfo接口：
+      url 请求地址（带参数并且没有解码的请求）?r=0.5095236310367329&d=home.firefoxchina.cn&c=visit_domain&a=&u=javascript%3A%3B&cid=unknown&t=%E5%9F%9F%E5%90%8D%E8%AE%BF%E9%97%AE
+      method
+      headers http协议 uri请求 header 
+      parameters(headers字段)
+      bodyoffset body位移
+      contentType(None 0,URL_ENCODED 1,CONTENT_TYPE_MULTIPART 2,CONTENT_TYPE_XML 3
+                  CONTENT_TYPE_JSON 4,CONTENT_TYPE_AMF 5,CONTENT_TYPE_UNKNOWN -1)
+```
+ 
