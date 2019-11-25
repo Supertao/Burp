@@ -11,6 +11,7 @@ from javax.swing import JTabbedPane
 from javax.swing import JPanel
 from javax.swing import JTable
 from javax.swing.table import DefaultTableModel
+import time
 
 import uuid
 
@@ -37,7 +38,12 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController)
         # 控制台标准输出、错误输出
         self._stdout = PrintWriter(callbacks.getStdout(), True)
         _stderr = PrintWriter(callbacks.getStderr(), True)
-        self._stdout.println("Hello Web Fuzz 2.0")
+        # self._stdout.println("Hello Web Fuzz 2.0")
+        install = time.strftime("%Y-%m-%d", time.localtime())
+        self._stdout.println("+------------------------------+")
+        self._stdout.println("|         Web Fuzz 2.0         |")
+        self._stdout.println("|    Started @ " + install + "      |")
+        self._stdout.println("+------------------------------+")
         # stderr.println("Hello erroutputs")
         self._log = ArrayList()  # java
         self._lock = Lock()
@@ -55,8 +61,8 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController)
          IMessageEditor createMessageEditor(IMessageEditorController controller,
             boolean editable);
         '''
-        requestEditor = FuzzEditor()
-        responeEditor = FuzzEditor()
+        requestEditor = FuzzEditor(self)
+        responeEditor = FuzzEditor(self)
         self._requestView = callbacks.createMessageEditor(requestEditor, False)
         self._responseView = callbacks.createMessageEditor(responeEditor, False)
         tabs.addTab("Request", self._requestView.getComponent())
@@ -125,6 +131,7 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController)
                 try:
                     self._lock.acquire()
                     row = self._log.size()
+                    # IHttpRequestResponsePersisted extends IHttpRequestResponse
                     self._log.add(LogEntry(toolFlag, self._callbacks.saveBuffersToTempFiles(messageInfo),
                                            self._helpers.analyzeRequest(messageInfo).getUrl()))
                     # 通知表格发生变化
@@ -195,11 +202,8 @@ class TableModel(DefaultTableModel):
         return 10
 
     def getRowCount(self):
-        self._extender._stdout.println("test:" + str(self._extender._log.size()))
+        # self._extender._stdout.println("test:"+str(self._extender._log.size()))
         return self._extender._log.size()
-
-    def getValueAt(self, row, col):
-        return int(row * col)
 
     # 设置表头
     def getColumnName(self, columnIndex):
@@ -209,9 +213,23 @@ class TableModel(DefaultTableModel):
         if columnIndex == 1:
             return "Host"
         if columnIndex == 2:
-            return "Methond"
+            return "Method"
         if columnIndex == 3:
             return "Url"
+        if columnIndex == 4:
+            return "Status"
+        return ""
+
+    def getValueAt(self, row, columnIndex):
+        logEntry = self._extender._log.get(row)
+        if columnIndex == 0:
+            return "#"
+        if columnIndex == 1:
+            return
+        if columnIndex == 2:
+            return "Method"
+        if columnIndex == 3:
+            return logEntry._url.toString()
         if columnIndex == 4:
             return "Status"
         return ""
@@ -225,9 +243,36 @@ class LogJTable(JTable):
 
     # 解决界面上请求和响应被选中时实时更新
     def changeSelection(self, row, column, toggle, extend):
+        try:
+            # 获取选中的行的详细请求内容
+            logEntity = self._extender._log.get(row)
+            # void setMessage(byte[] message, boolean isRequest);
+
+            self._extender._requestView.setMessage(logEntity._requestResponse.getRequest(), True)
+            # 一直都是空
+            self._extender._stdout.println("test1:" + str(logEntity._requestResponse.getResponse()))
+            try:
+
+                self._extender._responseView.setMessage(logEntity._requestResponse.getResponse(), False)
+                # 这里要判断下请求的响应是否存在，因为有请求不一定有响应
+                '''
+                 if(logEntity._requestResponse.getResponse()):
+                    self._extender._responseView.setMessage(logEntity._requestResponse.getResponse(),False)
+                else:
+                    self._extender._responseView.setMessage(bytes[0], False)
+                '''
+            except Exception as e:
+                print("_requestResponse error", e)
+            # 设置下当前请求,很重要，因为tableMode模型的值就是从这里来获取
+            self._extender.currentLogEntry = logEntity._requestResponse
+        except Exception as e:
+            print("jtable error", e)
+
+        JTable.changeSelection(self, row, column, toggle, extend)
+
+        # 创建log实体类，来记录每个请求（实际就是将请求给抽象成模型）
 
 
-# 创建log实体类，来记录每个请求（实际就是将请求给抽象成模型）
 # __init__魔术方法，只是将传入的参数来初始化该实例
 # __new__用来创建类并返回这个类的实例
 class LogEntry:
@@ -238,14 +283,14 @@ class LogEntry:
 
 
 class FuzzEditor(IMessageEditorController):
+    def __init__(self, extender):
+        self._extender = extender
+
     def getHttpService(self):
-        return
+        return self._extender.currentLogEntry.getHttpService()
 
     def getRequest(self):
-        return
+        return self._extender.currentLogEntry.getRequest()
 
     def getResponse(self):
-        return
-
-
-
+        return self._extender.currentLogEntry.getResponse()
