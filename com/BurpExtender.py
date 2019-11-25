@@ -120,13 +120,9 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController)
                 # helpers中带bytes 转 string
                 bodyBytes = messageInfo.getRequest()[bodyOffset:]
                 bodyStrings = self._helpers.bytesToString(bodyBytes)
-                # 给每个请求单独加一个md5来做标识
+                # 给每个请求单独加一个fuzzid来做标识,目前未使用
                 uid = str(uuid.uuid4())
                 fuzzid = ''.join(uid.split('-'))
-                newHeaders.append("fuzzid: " + fuzzid)
-                # 重新构建http请求
-                newMessages = self._helpers.buildHttpMessage(newHeaders, bodyBytes)
-                messageInfo.setRequest(newMessages)
                 self._stdout.println("Url:" + str(url) + "\n" + "".join(newHeaders) + "\n" + bodyStrings)
                 try:
                     self._lock.acquire()
@@ -161,36 +157,6 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController)
     public int getColumnCount();
     public Object getValueAt(int row, int column);
     '''
-    '''
-
-    def getRowCount(self):
-        try:
-            return self._log.size
-        except:
-            return 0
-
-    def getColumnCount(self):
-        return 3
-
-    def getColumnName(self, columnIndex):
-        if columnIndex == 0:
-            return "id"
-        if columnIndex == 1:
-            return "Tool"
-        if columnIndex == 2:
-            return "Url"
-        return ""
-
-    def getValueAt(self,row,column):
-        logEntry=self._log.get(row)
-        if column == 0:
-            #self._stdout.println("id:" + str(logEntry._id))
-            return 1
-        if column == 1:
-            return self._callbacks.getToolName(logEntry._toolFlag)
-        if column == 2:
-            return logEntry._url.toString()
-    '''
 
 
 # https://docs.oracle.com/javase/7/docs/api/javax/swing/JTable.html
@@ -213,10 +179,12 @@ class TableModel(DefaultTableModel):
         if columnIndex == 1:
             return "Host"
         if columnIndex == 2:
-            return "Method"
+            return "Tool"
         if columnIndex == 3:
-            return "Url"
+            return "Method"
         if columnIndex == 4:
+            return "Url"
+        if columnIndex == 5:
             return "Status"
         return ""
 
@@ -225,9 +193,9 @@ class TableModel(DefaultTableModel):
         if columnIndex == 0:
             return "#"
         if columnIndex == 1:
-            return
+            return "Host"
         if columnIndex == 2:
-            return "Method"
+            return self._extender._callbacks.getToolName(logEntry._toolFlag)
         if columnIndex == 3:
             return logEntry._url.toString()
         if columnIndex == 4:
@@ -249,8 +217,8 @@ class LogJTable(JTable):
             # void setMessage(byte[] message, boolean isRequest);
 
             self._extender._requestView.setMessage(logEntity._requestResponse.getRequest(), True)
-            # 一直都是空
-            self._extender._stdout.println("test1:" + str(logEntity._requestResponse.getResponse()))
+            # 一直都是空，原因就是processHttpMessage去构造请求了
+            # self._extender._stdout.println("test1:" + str(logEntity._requestResponse.getResponse()))
             try:
 
                 self._extender._responseView.setMessage(logEntity._requestResponse.getResponse(), False)
@@ -270,9 +238,8 @@ class LogJTable(JTable):
 
         JTable.changeSelection(self, row, column, toggle, extend)
 
-        # 创建log实体类，来记录每个请求（实际就是将请求给抽象成模型）
 
-
+# 创建log实体类，来记录每个请求（实际就是将请求给抽象成模型）
 # __init__魔术方法，只是将传入的参数来初始化该实例
 # __new__用来创建类并返回这个类的实例
 class LogEntry:
