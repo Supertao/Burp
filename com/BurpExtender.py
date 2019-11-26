@@ -11,6 +11,7 @@ from javax.swing import JTabbedPane
 from javax.swing import JPanel
 from javax.swing import JTable
 from javax.swing.table import DefaultTableModel
+from java.awt import BorderLayout
 import time
 
 import uuid
@@ -55,26 +56,36 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController)
         logTable = LogJTable(self, self._dataModel)
         logscrollPane = JScrollPane(logTable)
         self._splitpane.setLeftComponent(logscrollPane)
-        # 下面组件为request|reponse
-        tabs = JTabbedPane(JTabbedPane.TOP)
+        # 下面组件为request|response显示区域
+        # tabs = JTabbedPane(JTabbedPane.TOP)
+        requestResponseView = JSplitPane(JSplitPane.HORIZONTAL_SPLIT)
+        requestResponseView.setResizeWeight(0.5)
+        requestPanel = JPanel()
+        requestPanel.setLayout(BorderLayout())
+        responsePanel = JPanel()
+        responsePanel.setLayout(BorderLayout())
+
+        requestResponseView.setLeftComponent(requestPanel)
+        requestResponseView.setRightComponent(responsePanel)
         '''
-         IMessageEditor createMessageEditor(IMessageEditorController controller,
+         IMessageEditor createMessageEditor(IMessageEditorController contrpoller,
             boolean editable);
         '''
-        requestEditor = FuzzEditor(self)
-        responeEditor = FuzzEditor(self)
-        self._requestView = callbacks.createMessageEditor(requestEditor, False)
-        self._responseView = callbacks.createMessageEditor(responeEditor, False)
-        tabs.addTab("Request", self._requestView.getComponent())
-        tabs.addTab("Response", self._responseView.getComponent())
-        self._splitpane.setRightComponent(tabs)
+        # responseEditor = FuzzEditor(self)
+        # requestEditor = FuzzEditor(self)
+        self._requestView = callbacks.createMessageEditor(self, False)
+        self._responseView = callbacks.createMessageEditor(self, False)
+        # 界面由tabs选项卡改为两开界面(11.26)
+        requestPanel.add(self._requestView.getComponent())
+        responsePanel.add(self._responseView.getComponent())
+        self._splitpane.setRightComponent(requestResponseView)
 
         # callbacks.registerProxyListener(self)
         # 美容UI
         callbacks.customizeUiComponent(self._splitpane)
         callbacks.customizeUiComponent(logTable)
         callbacks.customizeUiComponent(logscrollPane)
-        callbacks.customizeUiComponent(tabs)
+        callbacks.customizeUiComponent(requestResponseView)
         # 一定要加ITab,不然没有界面
         callbacks.addSuiteTab(self)
         # 注册httpListener
@@ -91,59 +102,57 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController)
     def processHttpMessage(self, toolFlag, messageIsRequest, messageInfo):
         # Proxy Spider Scanner Intruder
         # 判断请求是否是PROXY中的
-        if toolFlag == 4:
-            # 是请求则处理
+        if toolFlag == 4 or toolFlag == 64 or toolFlag == 20:
+            # 既有响应又有请求，很重要(不然会出现很大的bug)
             if not messageIsRequest:
-                return
-
-            self._stdout.println("Enter print request")
-            try:
-                # 使用requestinfo我们可以轻松的获得body和headers
-                requestInfo = self._helpers.analyzeRequest(messageInfo)
-                '''
-                IRequestInfo接口：
-                url 
-                method
-                headers
-                parameters(headers字段)
-                bodyoffset body位移
-                contentType(None 0,URL_ENCODED 1,CONTENT_TYPE_MULTIPART 2,CONTENT_TYPE_XML 3
-                            CONTENT_TYPE_JSON 4,CONTENT_TYPE_AMF 5,CONTENT_TYPE_UNKNOWN -1)
-
-                '''
-                # 请求地址（带参数并且没有解码的请求）
-                url = requestInfo.getUrl()  # java.net.URL
-                headers = requestInfo.getHeaders()
-                # headers是java list 需要转化成python list
-                newHeaders = list(headers)
-                bodyOffset = requestInfo.getBodyOffset()
-                # helpers中带bytes 转 string
-                bodyBytes = messageInfo.getRequest()[bodyOffset:]
-                bodyStrings = self._helpers.bytesToString(bodyBytes)
-                # 给每个请求单独加一个fuzzid来做标识,目前未使用
-                uid = str(uuid.uuid4())
-                fuzzid = ''.join(uid.split('-'))
-                self._stdout.println("Url:" + str(url) + "\n" + "".join(newHeaders) + "\n" + bodyStrings)
+                self._stdout.println("Enter print request")
                 try:
-                    self._lock.acquire()
-                    row = self._log.size()
-                    # IHttpRequestResponsePersisted extends IHttpRequestResponse
-                    self._log.add(LogEntry(toolFlag, self._callbacks.saveBuffersToTempFiles(messageInfo),
-                                           self._helpers.analyzeRequest(messageInfo).getUrl()))
-                    # 通知表格发生变化
-                    # self.fireTableRowsInserted(row,row)
-                    self._dataModel.fireTableRowsInserted(row, row)
-                    # 解决row 值不匹配
-                    self._stdout.println(int(row + 1))
-                    self._lock.release()
-                except Exception as e:
-                    print("dataModel error", e)
-                    return
-            except Exception as e:
-                print("messageIsRequest is error!", e)
-                return
+                    # 使用requestinfo我们可以轻松的获得body和headers
+                    requestInfo = self._helpers.analyzeRequest(messageInfo)
+                    '''
+                    IRequestInfo接口：
+                    url 
+                    method
+                    headers
+                    parameters(headers字段)
+                    bodyoffset body位移
+                    contentType(None 0,URL_ENCODED 1,CONTENT_TYPE_MULTIPART 2,CONTENT_TYPE_XML 3
+                                CONTENT_TYPE_JSON 4,CONTENT_TYPE_AMF 5,CONTENT_TYPE_UNKNOWN -1)
 
-            return
+                    '''
+                    # 请求地址（带参数并且没有解码的请求）
+                    url = requestInfo.getUrl()  # java.net.URL
+                    headers = requestInfo.getHeaders()
+                    # headers是java list 需要转化成python list
+                    newHeaders = list(headers)
+                    bodyOffset = requestInfo.getBodyOffset()
+                    # helpers中带bytes 转 string
+                    bodyBytes = messageInfo.getRequest()[bodyOffset:]
+                    bodyStrings = self._helpers.bytesToString(bodyBytes)
+                    # 给每个请求单独加一个fuzzid来做标识,目前未使用
+                    uid = str(uuid.uuid4())
+                    fuzzid = ''.join(uid.split('-'))
+                    self._stdout.println("Url:" + str(url) + "\n" + "".join(newHeaders) + "\n" + bodyStrings)
+                    try:
+                        self._lock.acquire()
+                        row = self._log.size()
+                        # IHttpRequestResponsePersisted extends IHttpRequestResponse
+                        self._log.add(LogEntry(toolFlag, messageInfo,
+                                               self._helpers, self._callbacks))
+                        # 通知表格发生变化
+                        # self.fireTableRowsInserted(row,row)
+                        self._dataModel.fireTableRowsInserted(row, row)
+                        # 解决row 值不匹配
+                        self._stdout.println(int(row + 1))
+                        self._lock.release()
+                    except Exception as e:
+                        print("dataModel error", e)
+                        return
+                except Exception as e:
+                    print("messageIsRequest is error!", e)
+                    return
+            else:
+                pass
 
     # Give the new tab a name
     def getTabCaption(self):
@@ -186,6 +195,14 @@ class TableModel(DefaultTableModel):
             return "Url"
         if columnIndex == 5:
             return "Status"
+        if columnIndex == 6:
+            return "Length"
+        if columnIndex == 7:
+            return "MIME"
+        if columnIndex == 8:
+            return "SSL"
+        if columnIndex == 9:
+            return "Time"
         return ""
 
     def getValueAt(self, row, columnIndex):
@@ -193,13 +210,23 @@ class TableModel(DefaultTableModel):
         if columnIndex == 0:
             return "#"
         if columnIndex == 1:
-            return "Host"
+            return logEntry._host
         if columnIndex == 2:
             return self._extender._callbacks.getToolName(logEntry._toolFlag)
         if columnIndex == 3:
-            return logEntry._url.toString()
+            return logEntry._method
         if columnIndex == 4:
-            return "Status"
+            return logEntry._queryPath
+        if columnIndex == 5:
+            return logEntry._status
+        if columnIndex == 6:
+            return "Length"
+        if columnIndex == 7:
+            return logEntry._mime
+        if columnIndex == 8:
+            return "SSL"
+        if columnIndex == 9:
+            return "time"
         return ""
 
 
@@ -243,10 +270,26 @@ class LogJTable(JTable):
 # __init__魔术方法，只是将传入的参数来初始化该实例
 # __new__用来创建类并返回这个类的实例
 class LogEntry:
-    def __init__(self, toolFlag, requestResponse, url):
+    def __init__(self, toolFlag, messageInfo, helpers, callbacks):
+        self._callbacks = callbacks
+        self._helpers = helpers
         self._toolFlag = toolFlag
-        self._requestResponse = requestResponse
-        self._url = url
+        self._requestResponse = self._callbacks.saveBuffersToTempFiles(messageInfo)
+
+        if self._requestResponse.getResponse():
+            responseInfo = self._helpers.analyzeResponse(self._requestResponse.getResponse())
+            self._status = responseInfo.getStatusCode()
+            self._mime = responseInfo.getStatedMimeType()
+        requestInfo = self._helpers.analyzeRequest(messageInfo)
+        self._method = requestInfo.getMethod()
+        self._url = requestInfo.getUrl()
+        # 取出path路径
+        path = self._url.getPath()
+        if self._url.getQuery():
+            self._queryPath = str(path + "?" + self._url.getQuery())
+        else:
+            self._queryPath = str(path)
+        self._host = self._url.getHost()
 
 
 class FuzzEditor(IMessageEditorController):
