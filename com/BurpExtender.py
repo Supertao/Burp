@@ -12,6 +12,9 @@ from javax.swing import JPanel
 from javax.swing import JTable
 from javax.swing.table import DefaultTableModel
 from java.awt import BorderLayout
+from javax.swing import JCheckBox
+# from pybloom import BloomFilter
+from bitarray import bitarray
 import time
 
 import uuid
@@ -48,15 +51,34 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController)
         # stderr.println("Hello erroutputs")
         self._log = ArrayList()  # java
         self._lock = Lock()
-        # 定义burp插件的主界面
+
+        # 0.定义burp插件的主界面（上中下三个部分）
         # https: // blog.csdn.net / xietansheng / article / details / 74366517
-        self._splitpane = JSplitPane(JSplitPane.VERTICAL_SPLIT)  # 垂直分布
-        # 定义上面组件为log
+        self._mainPanel = JPanel()
+        self._mainPanel.setLayout(BorderLayout())
+        # createEmptyBorder(int top,int left,int bottom,int right)
+        # self._mainPanel.setBorder(BorderFactory.createEmptyBorder(2, 5, 2, 5))
+        # 1.定义Filter组件
+        filterPane = JPanel()
+        # 颜色对照表https://docs.oracle.com/javase/7/docs/api/java/awt/Color.html
+        # filterPane.setBorder(BorderFactory.createEmptyBorder(2,5, 2, 5))
+        # filterPane.setBorder(BorderFactory.createLineBorder(Color.LIGHT_GRAY,1))
+        selectProxy = JCheckBox("Proxy")
+        selectRepeater = JCheckBox("Repeater")
+        selectIntruder = JCheckBox("Intruder")
+        filterPane.add(selectProxy)
+        filterPane.add(selectRepeater)
+        filterPane.add(selectIntruder)
+        self._mainPanel.add(filterPane, BorderLayout.PAGE_START)  # 上部分
+
+        # 2.定义log记录组件
+        splitpane = JSplitPane(JSplitPane.VERTICAL_SPLIT)  # 垂直分布
         self._dataModel = TableModel(self)
         logTable = LogJTable(self, self._dataModel)
         logscrollPane = JScrollPane(logTable)
-        self._splitpane.setLeftComponent(logscrollPane)
-        # 下面组件为request|response显示区域
+        splitpane.setLeftComponent(logscrollPane)
+
+        # 3.下面组件为request|response显示区域
         # tabs = JTabbedPane(JTabbedPane.TOP)
         requestResponseView = JSplitPane(JSplitPane.HORIZONTAL_SPLIT)
         requestResponseView.setResizeWeight(0.5)
@@ -78,11 +100,12 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController)
         # 界面由tabs选项卡改为两开界面(11.26)
         requestPanel.add(self._requestView.getComponent())
         responsePanel.add(self._responseView.getComponent())
-        self._splitpane.setRightComponent(requestResponseView)
+        splitpane.setRightComponent(requestResponseView)
+        self._mainPanel.add(splitpane, BorderLayout.CENTER)
 
         # callbacks.registerProxyListener(self)
         # 美容UI
-        callbacks.customizeUiComponent(self._splitpane)
+        callbacks.customizeUiComponent(splitpane)
         callbacks.customizeUiComponent(logTable)
         callbacks.customizeUiComponent(logscrollPane)
         callbacks.customizeUiComponent(requestResponseView)
@@ -129,6 +152,9 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController)
                     # helpers中带bytes 转 string
                     bodyBytes = messageInfo.getRequest()[bodyOffset:]
                     bodyStrings = self._helpers.bytesToString(bodyBytes)
+                    # capacity是容量,error_rate是能容忍的误报率,超过误报率，抛出异常
+                    # f=BloomFilter(capacity=1000, error_rate=0.001)
+                    self._stdout.println(bitarray(10))
                     # 给每个请求单独加一个fuzzid来做标识,目前未使用
                     uid = str(uuid.uuid4())
                     fuzzid = ''.join(uid.split('-'))
@@ -136,6 +162,9 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController)
                     try:
                         self._lock.acquire()
                         row = self._log.size()
+                        # 解决URL去重，1 布隆过滤器 2 哈希表去重
+                        # https://www.cnblogs.com/i-love-python/p/11537720.html
+
                         # IHttpRequestResponsePersisted extends IHttpRequestResponse
                         self._log.add(LogEntry(toolFlag, messageInfo,
                                                self._helpers, self._callbacks))
@@ -143,7 +172,7 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController)
                         # self.fireTableRowsInserted(row,row)
                         self._dataModel.fireTableRowsInserted(row, row)
                         # 解决row 值不匹配
-                        self._stdout.println(int(row + 1))
+                        # self._stdout.println(int(row + 1))
                         self._lock.release()
                     except Exception as e:
                         print("dataModel error", e)
@@ -159,7 +188,7 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController)
         return self._labelName
 
     def getUiComponent(self):
-        return self._splitpane
+        return self._mainPanel
 
     '''
     public int getRowCount();
