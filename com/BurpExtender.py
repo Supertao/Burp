@@ -42,13 +42,17 @@ class actionRunMessage(ActionListener):
 
 # 删除选中的行
 class deleteLogtable(MouseAdapter):
+    def __init__(self, row):
+        self._row = row
+
     def mouseClicked(self, evt):
         # 通过获取按钮的内容来做相对的响应（https://www.cnblogs.com/dengyungao/p/7525013.html）
-
-        # 删除这一行
-        self._extender._dataModel.removeRow();
-        # 刷新
-        self._extender._dataModel.fireTableRowsDeleted();
+        buttonName = evt.getActionCommand()
+        if buttonName == "Remove Selected":
+            # 删除这一行
+            row = self._extender._dataModel.removeRow(self._row);
+            # 刷新
+            self._extender._dataModel.fireTableRowsDeleted(row, row);
 
 
 class popmenuListener(MouseAdapter):
@@ -90,6 +94,8 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
         # 表示私有变量
         self._callbacks = callbacks
         self._helpers = callbacks.getHelpers()
+        # 用来识别选中的是哪列
+        self._focusedRow = 0
         # 实现你想实现的代码
         callbacks.setExtensionName(self._extensionName)
         # 控制台标准输出、错误输出
@@ -152,7 +158,7 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
             tablecolumn.setPreferredWidth(self._dataModel.getCloumnWidth(i))
         # 设置下水平滚动，垂直滚动ScrollPaneConstants.HORIZONTAL_SCROLLBAR_AS_NEEDED,ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED
         logscrollPane = JScrollPane(self.logTable, ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED,
-                                    ScrollPaneConstants.HORIZONTAL_SCROLLBAR_AS_NEEDED)
+                                    ScrollPaneConstants.HORIZONTAL_AS_NEEDED)
         splitpane.setLeftComponent(logscrollPane)
 
         # 3.下面组件为request|response显示区域
@@ -295,7 +301,7 @@ class TableModel(DefaultTableModel):
         return 40
 
     def getColumnCount(self):
-        return 10
+        return 11
 
     def getRowCount(self):
         # self._extender._stdout.println("test:"+str(self._extender._log.size()))
@@ -332,6 +338,8 @@ class TableModel(DefaultTableModel):
             return "SSL"
         if columnIndex == 9:
             return "Time"
+        if columnIndex == 10:
+            return "Comment"
         return ""
 
     def getValueAt(self, row, columnIndex):
@@ -359,6 +367,8 @@ class TableModel(DefaultTableModel):
                 return False
         if columnIndex == 9:
             return logEntry._time
+        if columnIndex == 10:
+            return "Comment"
         return ""
 
 
