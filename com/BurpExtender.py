@@ -36,23 +36,45 @@ class actionRunMessage(ActionListener):
         listkey = r.keys('*bloomfilter*')
         for key in listkey:
             r.delete(key)
+        #       #几种弹窗的形式：https://www.cnblogs.com/guohaoyu110/p/6440333.html
+        JOptionPane.showMessageDialog(None, "Clear Redis Successfully!")
 
-        JOptionPane.showMessageDialog(None, "Clear Redis Finish!")
 
-
-# 删除选中的行
-class deleteLogtable(MouseAdapter):
-    def __init__(self, row):
+# 删除选中的行,最终要删除列表中的实体
+class deleteLogtable(ActionListener):
+    def __init__(self, extender, row):
+        self._extender = extender
         self._row = row
 
-    def mouseClicked(self, evt):
+    def actionPerformed(self, evt):
         # 通过获取按钮的内容来做相对的响应（https://www.cnblogs.com/dengyungao/p/7525013.html）
         buttonName = evt.getActionCommand()
+        self._extender._stdout.println(buttonName)
         if buttonName == "Remove Selected":
-            # 删除这一行
-            row = self._extender._dataModel.removeRow(self._row);
-            # 刷新
-            self._extender._dataModel.fireTableRowsDeleted(row, row);
+            if self._row == -1:
+                return
+            for i in self._row:
+                self._extender._stdout.println("remove:" + str(i))
+                self._extender._log.remove(i)
+                # 一定要通知数据模型更新数据
+                self._extender._dataModel.fireTableDataChanged()
+            # JOptionPane.showMessageDialog(None, "Remove Successfully!")
+        # 一定要有二次点击确定,防止误删除
+        if buttonName == "Clear All Histroy":
+            self._extender._stdout.println(buttonName)
+            if self._row == -1:
+                return
+            isSure = JOptionPane.showMessageDialog(self._extender.logTable, "Are you Sure to Clear All Histroy?",
+                                                   "Sure",
+                                                   JOptionPane.YES_NO_CANCEL_OPTION)
+            self._extender._stdout.println("xxx:" + str(isSure))
+            # JOptionPane.YES_OPTION 0
+            # 此处有bug,目前无法获取到isSure的正确值
+            if isSure == None:
+                self._extender._log.clear()
+                self._extender._stdout.println("clear all history" + str(self._extender._log.size()))
+                # 一定要通知数据模型更新数据
+                self._extender._dataModel.fireTableDataChanged()
 
 
 class popmenuListener(MouseAdapter):
@@ -77,8 +99,11 @@ class popmenuListener(MouseAdapter):
             mpopMenu.addSeparator()
             mpopMenu.add(copyMenu)
             # 通过点击位置找到点击为表格中的行
-            focusedRow = self._extender.logTable.rowAtPoint(evt.getPoint());
-            self._extender._stdout.println(focusedRow)
+            self._extender._focusedRow = self._extender.logTable.getSelectedRows();
+            self._extender._stdout.println(self._extender._focusedRow)
+            # 一定要为按钮添加点击事件
+            deleteMenu.addActionListener(deleteLogtable(self._extender, self._extender._focusedRow))
+            clearMenu.addActionListener(deleteLogtable(self._extender, self._extender._focusedRow))
             # deleteMenu.addActionListener()
             # 一定要指定位置显示弹窗
             mpopMenu.show(self._extender.logTable, evt.getX(), evt.getY())
@@ -158,7 +183,7 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
             tablecolumn.setPreferredWidth(self._dataModel.getCloumnWidth(i))
         # 设置下水平滚动，垂直滚动ScrollPaneConstants.HORIZONTAL_SCROLLBAR_AS_NEEDED,ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED
         logscrollPane = JScrollPane(self.logTable, ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED,
-                                    ScrollPaneConstants.HORIZONTAL_AS_NEEDED)
+                                    ScrollPaneConstants.HORIZONTAL_SCROLLBAR_AS_NEEDED)
         splitpane.setLeftComponent(logscrollPane)
 
         # 3.下面组件为request|response显示区域
@@ -259,7 +284,7 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
                             self._log.add(LogEntry(toolFlag, messageInfo,
                                                    self._helpers, self._callbacks))
                             bloom.insert(str(url))
-                            # 通知表格发生变化
+                            # 通知表格发生增加的变化
                             # self.fireTableRowsInserted(row,row)
                             self._dataModel.fireTableRowsInserted(row, row)
                             # 解决row 值不匹配
