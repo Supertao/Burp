@@ -77,6 +77,17 @@ class deleteLogtable(ActionListener):
                 self._extender._dataModel.fireTableDataChanged()
 
 
+        if buttonName == "Send to Repeater":
+            self._extender._stdout.println(buttonName)
+            if self._row == -1:
+                return
+
+            for i in self._row:
+                logEntry = self._extender._log.get(i)
+                self._extender._callbacks.sendToRepeater(logEntry._host, logEntry._port, logEntry._protocol,
+                                                         logEntry._requestResponse.getRequest(), str(i))
+
+
 class popmenuListener(MouseAdapter):
     def __init__(self, extender):
         self._extender = extender
@@ -104,6 +115,7 @@ class popmenuListener(MouseAdapter):
             # 一定要为按钮添加点击事件
             deleteMenu.addActionListener(deleteLogtable(self._extender, self._extender._focusedRow))
             clearMenu.addActionListener(deleteLogtable(self._extender, self._extender._focusedRow))
+            repeaterMenu.addActionListener(deleteLogtable(self._extender, self._extender._focusedRow))
             # deleteMenu.addActionListener()
             # 一定要指定位置显示弹窗
             mpopMenu.show(self._extender.logTable, evt.getX(), evt.getY())
@@ -182,7 +194,7 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
             tablecolumn = self.logTable.getColumnModel().getColumn(i)
             tablecolumn.setPreferredWidth(self._dataModel.getCloumnWidth(i))
         # 设置下水平滚动，垂直滚动ScrollPaneConstants.HORIZONTAL_SCROLLBAR_AS_NEEDED,ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED
-        logscrollPane = JScrollPane(self.logTable, ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED,
+        logscrollPane = JScrollPane(self.logTable, ScrollPaneConstants.VERTICAL_SCROLLBAR_ALWAYS,
                                     ScrollPaneConstants.HORIZONTAL_SCROLLBAR_AS_NEEDED)
         splitpane.setLeftComponent(logscrollPane)
 
@@ -194,9 +206,6 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
         requestPanel.setLayout(BorderLayout())
         responsePanel = JPanel()
         responsePanel.setLayout(BorderLayout())
-
-        requestResponseView.setLeftComponent(requestPanel)
-        requestResponseView.setRightComponent(responsePanel)
         '''
          IMessageEditor createMessageEditor(IMessageEditorController contrpoller,
             boolean editable);
@@ -208,12 +217,15 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
         # 界面由tabs选项卡改为两开界面(11.26)
         requestPanel.add(self._requestView.getComponent())
         responsePanel.add(self._responseView.getComponent())
+        requestResponseView.setLeftComponent(requestPanel)
+        requestResponseView.setRightComponent(responsePanel)
         splitpane.setRightComponent(requestResponseView)
         self._mainPanel.add(splitpane, BorderLayout.CENTER)
 
         # callbacks.registerProxyListener(self)
         # 美容UI
         callbacks.customizeUiComponent(splitpane)
+        callbacks.customizeUiComponent(self._mainPanel)
         callbacks.customizeUiComponent(self.logTable)
         callbacks.customizeUiComponent(logscrollPane)
         callbacks.customizeUiComponent(requestResponseView)
@@ -253,7 +265,6 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
                     bodyoffset body位移
                     contentType(None 0,URL_ENCODED 1,CONTENT_TYPE_MULTIPART 2,CONTENT_TYPE_XML 3
                                 CONTENT_TYPE_JSON 4,CONTENT_TYPE_AMF 5,CONTENT_TYPE_UNKNOWN -1)
-
                     '''
                     # 请求地址（带参数并且没有解码的请求）
                     url = requestInfo.getUrl()  # java.net.URL
@@ -386,10 +397,7 @@ class TableModel(DefaultTableModel):
         if columnIndex == 7:
             return logEntry._mime
         if columnIndex == 8:
-            if logEntry._protocol == "https":
-                return True
-            else:
-                return False
+            return logEntry._protocol
         if columnIndex == 9:
             return logEntry._time
         if columnIndex == 10:
@@ -457,8 +465,12 @@ class LogEntry:
         else:
             self._queryPath = str(path)
         self._host = self._url.getHost()
+        self._port = self._url.getPort()
         self._time = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
-        self._protocol = self._requestResponse.getHttpService().getProtocol()
+        if self._requestResponse.getHttpService().getProtocol() == "https":
+            self._protocol = True
+        else:
+            self._protocol = False
 
 
 class FuzzEditor(IMessageEditorController):
