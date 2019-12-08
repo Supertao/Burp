@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 from burp import IBurpExtender, ITab, IMessageEditorTabFactory, IMessageEditorController, IContextMenuFactory
-from burp import IHttpListener,IScannerCheck
+from burp import IHttpListener,IScannerCheck,IIntruderPayloadGenerator,IIntruderPayloadGeneratorFactory
 from java.io import PrintWriter
 from java.util import ArrayList
 from threading import Lock
@@ -29,6 +29,12 @@ import uuid
 import redis
 from hashlib import md5
 #可以规范下导入导出错误
+
+
+PAYLOADS = [
+    bytearray("|"),
+    bytearray("<script>alert(1)</script>")
+]
 
 # clear redis action
 class actionRunMessage(ActionListener):
@@ -89,9 +95,29 @@ class deleteLogtable(ActionListener):
                                                          logEntry._requestResponse.getRequest(), str(i))
 
 
-class fuzzscan():
-    def __init__(self,_extender, _focusedRow):
-        pass
+class WebFuzz(IIntruderPayloadGenerator):
+    def __init__(self):
+        self.maxpayloads=3
+        self.numpayloads=0
+        return
+
+    # 决定生成器是否能够提供更多payload
+    # boolean
+    def hasMorePayloads(self):
+        if (self.numpayloads<len(PAYLOADS)):
+            return True
+
+    #用于获取下一个payload
+    def getNextPayload(self,baseValue):
+        payload=PAYLOADS[self.numpayloads]
+        self.numpayloads+=1
+        return payload
+
+
+    #重制生成器状态，使下次调用getNextPayload方法时返回第一条payload
+    def reset(self):
+        self.numpayloads ==0
+
 
 
 class popmenuListener(MouseAdapter):
@@ -129,7 +155,7 @@ class popmenuListener(MouseAdapter):
             mpopMenu.show(self._extender.logTable, evt.getX(), evt.getY())
 
 
-class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController, IContextMenuFactory,IScannerCheck):
+class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController, IContextMenuFactory,IScannerCheck,IIntruderPayloadGeneratorFactory):
     # Burp extensions 列表中的扩展名
     _extensionName = "Fuzz 2.0"
     _labelName = "Web Fuzz"
@@ -248,6 +274,8 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
         callbacks.registerHttpListener(self)
         #注册扫描
         callbacks.registerScannerCheck(self)
+        #payload生成器
+        callbacks.registerIntruderPayloadGeneratorFactory(self)
         return
 
     #被动扫描（被动-----听！，主动-----搜！）
@@ -265,8 +293,12 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
     #主动扫描
     def doActiveScan(self,baseRequestResponse,insertionPoint):
         return []
-
-
+    #payload生成器的名称
+    def getGeneratorName(self):
+        return "Web Fuzz"
+    #实例
+    def createNewInstance(self,attack):
+        return WebFuzz()
 
     # 定义子菜单
     def createMenuItems(self, invocation):
