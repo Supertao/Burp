@@ -1,7 +1,8 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
+
 from burp import IBurpExtender, ITab, IMessageEditorTabFactory, IMessageEditorController, IContextMenuFactory
-from burp import IHttpListener
+from burp import IHttpListener,IScannerCheck
 from java.io import PrintWriter
 from java.util import ArrayList
 from threading import Lock
@@ -27,7 +28,7 @@ import time
 import uuid
 import redis
 from hashlib import md5
-
+#可以规范下导入导出错误
 
 # clear redis action
 class actionRunMessage(ActionListener):
@@ -88,6 +89,11 @@ class deleteLogtable(ActionListener):
                                                          logEntry._requestResponse.getRequest(), str(i))
 
 
+class fuzzscan():
+    def __init__(self,_extender, _focusedRow):
+        pass
+
+
 class popmenuListener(MouseAdapter):
     def __init__(self, extender):
         self._extender = extender
@@ -100,10 +106,11 @@ class popmenuListener(MouseAdapter):
             deleteMenu = JMenuItem("Remove Selected")
             repeaterMenu = JMenuItem("Send to Repeater")
             copyMenu = JMenuItem("Copy URL")
+            activeMenu = JMenuItem("Active Scan")
             clearMenu = JMenuItem("Clear All Histroy")
-
             mpopMenu.add(deleteMenu)
             mpopMenu.add(repeaterMenu)
+            mpopMenu.add(activeMenu)
             # 添加一条分割符，达到提示的效果
             mpopMenu.addSeparator()
             mpopMenu.add(clearMenu)
@@ -117,11 +124,12 @@ class popmenuListener(MouseAdapter):
             clearMenu.addActionListener(deleteLogtable(self._extender, self._extender._focusedRow))
             repeaterMenu.addActionListener(deleteLogtable(self._extender, self._extender._focusedRow))
             # deleteMenu.addActionListener()
+            activeMenu.addActionListener(fuzzscan(self._extender,self._extender._focusedRow))
             # 一定要指定位置显示弹窗
             mpopMenu.show(self._extender.logTable, evt.getX(), evt.getY())
 
 
-class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController, IContextMenuFactory):
+class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController, IContextMenuFactory,IScannerCheck):
     # Burp extensions 列表中的扩展名
     _extensionName = "Fuzz 2.0"
     _labelName = "Web Fuzz"
@@ -169,12 +177,17 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
         selectRepeater = JCheckBox("Repeater")
         selectIntruder = JCheckBox("Intruder")
         selectCookies = JCheckBox("Cookies")
+        reidisOnOff=JCheckBox("Duplicate ON")
+        connDb = JButton("ConnDb")
         redisClear = JButton("Redis Clear")
         redisClear.addActionListener(actionRunMessage())
         connDb = JButton("ConnDb")
+        scanAll=JButton("Scan All")
         topPane.add(connDb)
         topPane.add(redisClear)
+        topPane.add(scanAll)
         filterPane.add(topPane)
+        filterPane.add(reidisOnOff)
         filterPane.add(selectProxy)
         filterPane.add(selectRepeater)
         filterPane.add(selectIntruder)
@@ -233,7 +246,27 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
         callbacks.addSuiteTab(self)
         # 注册httpListener
         callbacks.registerHttpListener(self)
+        #注册扫描
+        callbacks.registerScannerCheck(self)
         return
+
+    #被动扫描（被动-----听！，主动-----搜！）
+    def doPassiveScan(self,baseRequestResponse):
+        requestscan=self._helpers.analyzeRequest(baseRequestResponse)
+        self._stdout.println("PassiveScan")
+        return
+
+    '''
+    IHttpRequestResponse
+    baseRequestResponse,
+    IScannerInsertionPoint
+    insertionPoint);
+    '''
+    #主动扫描
+    def doActiveScan(self,baseRequestResponse,insertionPoint):
+        return []
+
+
 
     # 定义子菜单
     def createMenuItems(self, invocation):
