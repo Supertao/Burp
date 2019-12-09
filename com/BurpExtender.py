@@ -32,7 +32,7 @@ from hashlib import md5
 
 
 PAYLOADS = [
-    bytearray("|"),
+    bytearray("<svg onload=alert(1)/>"),
     bytearray("<script>alert(1)</script>")
 ]
 
@@ -96,20 +96,25 @@ class deleteLogtable(ActionListener):
 
 
 class WebFuzz(IIntruderPayloadGenerator):
-    def __init__(self):
-        self.maxpayloads=3
+    def __init__(self,attack):
+        self.maxpayloads=5
         self.numpayloads=0
-        return
+
 
     # 决定生成器是否能够提供更多payload
     # boolean
     def hasMorePayloads(self):
-        if (self.numpayloads<len(PAYLOADS)):
+        # 如果达到最大次数就返回false退出，但并不是直接退出而是到reset函数，这里reset函数就是清零
+        if (self.numpayloads == self.maxpayloads):
+            return False
+        else:
             return True
 
     #用于获取下一个payload
-    def getNextPayload(self,baseValue):
-        payload=PAYLOADS[self.numpayloads]
+    def getNextPayload(self,payload):
+        #传进来的参数是payload
+        payload="".join(chr(x) for x in payload)
+        payload+=PAYLOADS[self.numpayloads]
         self.numpayloads+=1
         return payload
 
@@ -117,6 +122,8 @@ class WebFuzz(IIntruderPayloadGenerator):
     #重制生成器状态，使下次调用getNextPayload方法时返回第一条payload
     def reset(self):
         self.numpayloads ==0
+        return
+
 
 
 
@@ -293,12 +300,13 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
     #主动扫描
     def doActiveScan(self,baseRequestResponse,insertionPoint):
         return []
+
     #payload生成器的名称
     def getGeneratorName(self):
         return "Web Fuzz"
     #实例
     def createNewInstance(self,attack):
-        return WebFuzz()
+        return WebFuzz(self,attack)
 
     # 定义子菜单
     def createMenuItems(self, invocation):
