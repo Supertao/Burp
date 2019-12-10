@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 from burp import IBurpExtender, ITab, IMessageEditorTabFactory, IMessageEditorController, IContextMenuFactory
-from burp import IHttpListener,IScannerCheck,IIntruderPayloadGenerator,IIntruderPayloadGeneratorFactory
+from burp import IHttpListener, IScannerCheck, IIntruderPayloadGenerator, IIntruderPayloadGeneratorFactory
 from java.io import PrintWriter
 from java.util import ArrayList
 from threading import Lock
@@ -28,13 +28,15 @@ import time
 import uuid
 import redis
 from hashlib import md5
-#可以规范下导入导出错误
+
+# 可以规范下导入导出错误
 
 
 PAYLOADS = [
     bytearray("<svg onload=alert(1)/>"),
     bytearray("<script>alert(1)</script>")
 ]
+
 
 # clear redis action
 class actionRunMessage(ActionListener):
@@ -83,6 +85,15 @@ class deleteLogtable(ActionListener):
                 # 一定要通知数据模型更新数据
                 self._extender._dataModel.fireTableDataChanged()
 
+        if buttonName == "Send to Repeater":
+            self._extender._stdout.println(buttonName)
+            if self._row == -1:
+                return
+
+            for i in self._row:
+                logEntry = self._extender._log.get(i)
+                self._extender._callbacks.sendToRepeater(logEntry._host, logEntry._port, logEntry._protocol,
+                                                         logEntry._requestResponse.getRequest(), str(i))
 
         if buttonName == "Send to Repeater":
             self._extender._stdout.println(buttonName)
@@ -94,37 +105,14 @@ class deleteLogtable(ActionListener):
                 self._extender._callbacks.sendToRepeater(logEntry._host, logEntry._port, logEntry._protocol,
                                                          logEntry._requestResponse.getRequest(), str(i))
 
-
-class WebFuzz(IIntruderPayloadGenerator):
-    def __init__(self,attack):
-        self.maxpayloads=5
-        self.numpayloads=0
-
-
-    # 决定生成器是否能够提供更多payload
-    # boolean
-    def hasMorePayloads(self):
-        # 如果达到最大次数就返回false退出，但并不是直接退出而是到reset函数，这里reset函数就是清零
-        if (self.numpayloads == self.maxpayloads):
-            return False
-        else:
-            return True
-
-    #用于获取下一个payload
-    def getNextPayload(self,payload):
-        #传进来的参数是payload
-        payload="".join(chr(x) for x in payload)
-        payload+=PAYLOADS[self.numpayloads]
-        self.numpayloads+=1
-        return payload
-
-
-    #重制生成器状态，使下次调用getNextPayload方法时返回第一条payload
-    def reset(self):
-        self.numpayloads ==0
-        return
-
-
+        if buttonName == "Send to Intruder":
+            self._extender._stdout.println(buttonName)
+            if self._row == -1:
+                return
+            for i in self._row:
+                logEntry = self._extender._log.get(i)
+                self._extender._callbacks.sendToIntruder(logEntry._host, logEntry._port, logEntry._protocol,
+                                                         logEntry._requestResponse.getRequest())
 
 
 class popmenuListener(MouseAdapter):
@@ -138,11 +126,13 @@ class popmenuListener(MouseAdapter):
             mpopMenu = JPopupMenu()
             deleteMenu = JMenuItem("Remove Selected")
             repeaterMenu = JMenuItem("Send to Repeater")
+            intruderMenu = JMenuItem("Send to Intruder")
             copyMenu = JMenuItem("Copy URL")
             activeMenu = JMenuItem("Active Scan")
             clearMenu = JMenuItem("Clear All Histroy")
             mpopMenu.add(deleteMenu)
             mpopMenu.add(repeaterMenu)
+            mpopMenu.add(intruderMenu)
             mpopMenu.add(activeMenu)
             # 添加一条分割符，达到提示的效果
             mpopMenu.addSeparator()
@@ -156,13 +146,51 @@ class popmenuListener(MouseAdapter):
             deleteMenu.addActionListener(deleteLogtable(self._extender, self._extender._focusedRow))
             clearMenu.addActionListener(deleteLogtable(self._extender, self._extender._focusedRow))
             repeaterMenu.addActionListener(deleteLogtable(self._extender, self._extender._focusedRow))
+            intruderMenu.addActionListener(deleteLogtable(self._extender, self._extender._focusedRow))
             # deleteMenu.addActionListener()
-            activeMenu.addActionListener(fuzzscan(self._extender,self._extender._focusedRow))
+            # activeMenu.addActionListener(fuzzscan(self._extender, self._extender._focusedRow))
             # 一定要指定位置显示弹窗
             mpopMenu.show(self._extender.logTable, evt.getX(), evt.getY())
 
 
-class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController, IContextMenuFactory,IScannerCheck,IIntruderPayloadGeneratorFactory):
+class WebFuzz(IIntruderPayloadGenerator):
+    def __init__(self, extender, attack):
+        self._extender = extender
+        self.maxpayloads = 5
+        self.numpayloads = 0
+        corups = open('Fuzzing.pay', 'r')
+        # self._extender._stdout.println(corups)
+        self.PAYLOADSS = []
+        for line in corups:
+            # self._extender._stdout.println(line)
+            self.PAYLOADSS.append(bytearray(line.strip('\n')))
+        self._extender._stdout.println(len(self.PAYLOADSS))
+
+    # 决定生成器是否能够提供更多payload
+    # boolean
+    def hasMorePayloads(self):
+        # 如果达到最大次数就返回false退出，但并不是直接退出而是到reset函数，这里reset函数就是清零
+        if (self.numpayloads < len(self.PAYLOADSS)):
+            return True
+        else:
+            return False
+
+    # 用于获取下一个payload
+    def getNextPayload(self, payload):
+        # 传进来的参数是payload
+        payload = "".join(chr(x) for x in payload)
+        payload += self.PAYLOADSS[self.numpayloads]
+        self.numpayloads += 1
+        return payload
+
+    # 重制生成器状态，使下次调用getNextPayload方法时返回第一条payload
+    def reset(self):
+        self.numpayloads == 0
+        return
+
+
+class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController, IContextMenuFactory, IScannerCheck,
+                   IIntruderPayloadGeneratorFactory):
     # Burp extensions 列表中的扩展名
     _extensionName = "Fuzz 2.0"
     _labelName = "Web Fuzz"
@@ -210,15 +238,15 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
         selectRepeater = JCheckBox("Repeater")
         selectIntruder = JCheckBox("Intruder")
         selectCookies = JCheckBox("Cookies")
-        reidisOnOff=JCheckBox("Duplicate ON")
+        reidisOnOff = JCheckBox("Duplicate ON")
         connDb = JButton("ConnDb")
         redisClear = JButton("Redis Clear")
         redisClear.addActionListener(actionRunMessage())
         connDb = JButton("ConnDb")
-        scanAll=JButton("Scan All")
+        scanAll = JButton("Scan All")
         topPane.add(connDb)
-        topPane.add(redisClear)
         topPane.add(scanAll)
+        topPane.add(redisClear)
         filterPane.add(topPane)
         filterPane.add(reidisOnOff)
         filterPane.add(selectProxy)
@@ -256,10 +284,10 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
          IMessageEditor createMessageEditor(IMessageEditorController contrpoller,
             boolean editable);
         '''
-        # responseEditor = FuzzEditor(self)
-        # requestEditor = FuzzEditor(self)
-        self._requestView = callbacks.createMessageEditor(self, False)
-        self._responseView = callbacks.createMessageEditor(self, False)
+        requestEditor = FuzzEditor(self)
+        responseEditor = FuzzEditor(self)
+        self._requestView = callbacks.createMessageEditor(requestEditor, False)
+        self._responseView = callbacks.createMessageEditor(responseEditor, False)
         # 界面由tabs选项卡改为两开界面(11.26)
         requestPanel.add(self._requestView.getComponent())
         responsePanel.add(self._responseView.getComponent())
@@ -279,15 +307,15 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
         callbacks.addSuiteTab(self)
         # 注册httpListener
         callbacks.registerHttpListener(self)
-        #注册扫描
+        # 注册扫描
         callbacks.registerScannerCheck(self)
-        #payload生成器
+        # payload生成器
         callbacks.registerIntruderPayloadGeneratorFactory(self)
         return
 
-    #被动扫描（被动-----听！，主动-----搜！）
-    def doPassiveScan(self,baseRequestResponse):
-        requestscan=self._helpers.analyzeRequest(baseRequestResponse)
+    # 被动扫描（被动-----听！，主动-----搜！）
+    def doPassiveScan(self, baseRequestResponse):
+        requestscan = self._helpers.analyzeRequest(baseRequestResponse)
         self._stdout.println("PassiveScan")
         return
 
@@ -297,16 +325,18 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
     IScannerInsertionPoint
     insertionPoint);
     '''
-    #主动扫描
-    def doActiveScan(self,baseRequestResponse,insertionPoint):
+
+    # 主动扫描
+    def doActiveScan(self, baseRequestResponse, insertionPoint):
         return []
 
-    #payload生成器的名称
+    # payload生成器的名称
     def getGeneratorName(self):
         return "Web Fuzz"
-    #实例
-    def createNewInstance(self,attack):
-        return WebFuzz(self,attack)
+
+    # 实例
+    def createNewInstance(self, attack):
+        return WebFuzz(self, attack)
 
     # 定义子菜单
     def createMenuItems(self, invocation):
