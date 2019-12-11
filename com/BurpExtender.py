@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 from burp import IBurpExtender, ITab, IMessageEditorTabFactory, IMessageEditorController, IContextMenuFactory
-from burp import IHttpListener, IScannerCheck, IIntruderPayloadGenerator, IIntruderPayloadGeneratorFactory
+from burp import IHttpListener, IScannerCheck, IIntruderPayloadGenerator,IIntruderPayloadGeneratorFactory
 from java.io import PrintWriter
 from java.util import ArrayList
 from threading import Lock
@@ -23,20 +23,13 @@ from javax.swing import BorderFactory
 from java.lang import Boolean
 from javax.swing import ScrollPaneConstants
 from javax.swing import JPopupMenu
-from javax.swing import JMenuItem
+from javax.swing import JMenu,JMenuItem
 import time
 import uuid
 import redis
 from hashlib import md5
 
 # 可以规范下导入导出错误
-
-
-PAYLOADS = [
-    bytearray("<svg onload=alert(1)/>"),
-    bytearray("<script>alert(1)</script>")
-]
-
 
 # clear redis action
 class actionRunMessage(ActionListener):
@@ -219,10 +212,11 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
 
         # 0.定义burp插件的主界面（上中下三个部分）
         # https: // blog.csdn.net / xietansheng / article / details / 74366517
-        self._mainPanel = JPanel()
-        self._mainPanel.setLayout(BorderLayout())
+        self.mainTab=JTabbedPane()
+        mainPanel = JPanel()
+        mainPanel.setLayout(BorderLayout())
         # createEmptyBorder(int top,int left,int bottom,int right)
-        # self._mainPanel.setBorder(BorderFactory.createEmptyBorder(2, 5, 2, 5))
+        # mainPanel.setBorder(BorderFactory.createEmptyBorder(2, 5, 2, 5))
         # 1.定义Filter组件
         filterPane = JPanel()
         filterPane.setLayout(FlowLayout(FlowLayout.LEFT))
@@ -253,7 +247,7 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
         filterPane.add(selectRepeater)
         filterPane.add(selectIntruder)
         filterPane.add(selectCookies)
-        self._mainPanel.add(filterPane, BorderLayout.PAGE_START)  # 上部分
+        mainPanel.add(filterPane, BorderLayout.PAGE_START)  # 上部分
 
         # 2.定义log记录组件
         splitpane = JSplitPane(JSplitPane.VERTICAL_SPLIT)  # 垂直分布
@@ -294,12 +288,19 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
         requestResponseView.setLeftComponent(requestPanel)
         requestResponseView.setRightComponent(responsePanel)
         splitpane.setRightComponent(requestResponseView)
-        self._mainPanel.add(splitpane, BorderLayout.CENTER)
+        mainPanel.add(splitpane, BorderLayout.CENTER)
+        fuzzPanel = JPanel()
+        optionPane=JPanel()
+        self.mainTab.add("Main",mainPanel)
+        self.mainTab.add("Fuzz", fuzzPanel)
+        self.mainTab.add("Options", optionPane)
+
 
         # callbacks.registerProxyListener(self)
         # 美容UI
         callbacks.customizeUiComponent(splitpane)
-        callbacks.customizeUiComponent(self._mainPanel)
+        callbacks.customizeUiComponent(mainPanel)
+        callbacks.customizeUiComponent(self.mainTab)
         callbacks.customizeUiComponent(self.logTable)
         callbacks.customizeUiComponent(logscrollPane)
         callbacks.customizeUiComponent(requestResponseView)
@@ -311,6 +312,7 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
         callbacks.registerScannerCheck(self)
         # payload生成器
         callbacks.registerIntruderPayloadGeneratorFactory(self)
+        callbacks.registerContextMenuFactory(self)
         return
 
     # 被动扫描（被动-----听！，主动-----搜！）
@@ -338,9 +340,14 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
     def createNewInstance(self, attack):
         return WebFuzz(self, attack)
 
-    # 定义子菜单
+    # 定义请求、响应中的请求Fuzz
     def createMenuItems(self, invocation):
-        pass
+        menuList=ArrayList()
+        menu=JMenu("Web Fuzz")
+        intruderSelected=JMenuItem("IntruderFuzz")
+        menu.add(intruderSelected)
+        menuList.add(menu)
+        return menuList
 
     '''
     void processHttpMessage(int toolFlag,
@@ -418,7 +425,7 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
         return self._labelName
 
     def getUiComponent(self):
-        return self._mainPanel
+        return self.mainTab
 
     '''
     public int getRowCount();
