@@ -28,8 +28,23 @@ import time
 import uuid
 import redis
 from hashlib import md5
+import threading
 
 # 可以规范下导入导出错误
+class duplicateOnOff(ActionListener):
+    def __init__(self,extender):
+        self._extender=extender
+
+    def actionPerformed(self,e):
+        button=self._extender.duplicateOnOff
+        if(button.getText()=="Duplicate OFF"):
+            self._extender.isDuplicate=True
+            button.setText("Duplicate ON ")
+        else:
+            self._extender.isDuplicate = False
+            button.setText("Duplicate OFF")
+        return
+
 
 # clear redis action
 class actionRunMessage(ActionListener):
@@ -40,6 +55,24 @@ class actionRunMessage(ActionListener):
             r.delete(key)
         #       #几种弹窗的形式：https://www.cnblogs.com/guohaoyu110/p/6440333.html
         JOptionPane.showMessageDialog(None, "Clear Redis Successfully!")
+
+#启动线程来完成请求的发送
+class buildHttp(threading.Thread):
+    def __init__(self,threadid,extender,log):
+        threading.Thread.__init__(self)
+        self.threadid=threadid
+        self._extender=extender
+        self._log=log
+    #执行代码放在run中，线程在创建后会直接运行run函数
+    def run(self):
+        req_url=self._log._url
+        host=self._log._host
+        port=self._log._port
+        protocol=self._log._protocol
+        request_byte=self._extender._helpers.buildHttpRequest(req_url)
+        #self._extender._stdout.println("request:"+self._extender._helpers.bytesToString(request_byte))
+        response_byte=self._extender._callbacks.makeHttpRequest(host,port,protocol,request_byte)
+        #self._extender._stdout.println("repsones:"+self._extender._helpers.bytesToString(response_byte))
 
 
 # 删除选中的行,最终要删除列表中的实体
@@ -106,7 +139,27 @@ class deleteLogtable(ActionListener):
                 logEntry = self._extender._log.get(i)
                 self._extender._callbacks.sendToIntruder(logEntry._host, logEntry._port, logEntry._protocol,
                                                          logEntry._requestResponse.getRequest())
+        #有个bug 需要修复，就是获取的值和显示的差别很大
+        if buttonName == "IntruderFuzz":
+            self._extender._stdout.println(buttonName)
+            if self._row == -1:
+                return
+            #同样的位置，点击2次以上，会出现异常
+            for i in self._row:
+                row=self._extender._fuzz.size()
+                #list添加该intruderfuzz 请求
+                self._extender._stdout.println("test:"+str(i)+":row:"+str(row))
+                log=self._extender._log.get(i)
+                #self._extender._stdout.println(type(i))
+                self._extender._fuzz.add(log)
+                #一定要告知fuzzModel更新了
+                self._extender._fuzzModel.fireTableRowsInserted(row,row)
+                #self.mainTab.setSelectedIndex(2)
+                #重点Fuzz了
+                for i in range(1):
+                    buildHttp(i,self._extender,log).start()
 
+            return
 
 class popmenuListener(MouseAdapter):
     def __init__(self, extender):
@@ -122,11 +175,13 @@ class popmenuListener(MouseAdapter):
             intruderMenu = JMenuItem("Send to Intruder")
             copyMenu = JMenuItem("Copy URL")
             activeMenu = JMenuItem("Active Scan")
+            intruderFuzzMenu = JMenuItem("IntruderFuzz")
             clearMenu = JMenuItem("Clear All Histroy")
             mpopMenu.add(deleteMenu)
             mpopMenu.add(repeaterMenu)
             mpopMenu.add(intruderMenu)
             mpopMenu.add(activeMenu)
+            mpopMenu.add(intruderFuzzMenu)
             # 添加一条分割符，达到提示的效果
             mpopMenu.addSeparator()
             mpopMenu.add(clearMenu)
@@ -142,6 +197,7 @@ class popmenuListener(MouseAdapter):
             intruderMenu.addActionListener(deleteLogtable(self._extender, self._extender._focusedRow))
             # deleteMenu.addActionListener()
             # activeMenu.addActionListener(fuzzscan(self._extender, self._extender._focusedRow))
+            intruderFuzzMenu.addActionListener(deleteLogtable(self._extender, self._extender._focusedRow))
             # 一定要指定位置显示弹窗
             mpopMenu.show(self._extender.logTable, evt.getX(), evt.getY())
 
@@ -208,6 +264,7 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
         self._stdout.println("+------------------------------+")
         # stderr.println("Hello erroutputs")
         self._log = ArrayList()  # java
+        self._fuzz = ArrayList()
         self._lock = Lock()
 
         # 0.定义burp插件的主界面（上中下三个部分）
@@ -232,7 +289,10 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
         selectRepeater = JCheckBox("Repeater")
         selectIntruder = JCheckBox("Intruder")
         selectCookies = JCheckBox("Cookies")
-        reidisOnOff = JCheckBox("Duplicate ON")
+        self.duplicateOnOff = JButton("Duplicate OFF")
+        #默认值为不开启
+        self.isDuplicate=False
+        self.duplicateOnOff.addActionListener(duplicateOnOff(self))
         connDb = JButton("ConnDb")
         redisClear = JButton("Redis Clear")
         redisClear.addActionListener(actionRunMessage())
@@ -241,8 +301,8 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
         topPane.add(connDb)
         topPane.add(scanAll)
         topPane.add(redisClear)
+        topPane.add(self.duplicateOnOff)
         filterPane.add(topPane)
-        filterPane.add(reidisOnOff)
         filterPane.add(selectProxy)
         filterPane.add(selectRepeater)
         filterPane.add(selectIntruder)
@@ -251,7 +311,7 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
 
         # 2.定义log记录组件
         splitpane = JSplitPane(JSplitPane.VERTICAL_SPLIT)  # 垂直分布
-        self._dataModel = TableModel(self)
+        self._dataModel = TableModel(self,self._log)
         self.logTable = LogJTable(self, self._dataModel)
         # 绑定点击事件
         self.logTable.addMouseListener(popmenuListener(self))
@@ -289,10 +349,28 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
         requestResponseView.setRightComponent(responsePanel)
         splitpane.setRightComponent(requestResponseView)
         mainPanel.add(splitpane, BorderLayout.CENTER)
-        fuzzPanel = JPanel()
+
+        # 4.定义Fuzz记录组件
+        fuzzsplitpane = JSplitPane(JSplitPane.VERTICAL_SPLIT)  # 垂直分布
+        self._fuzzModel = TableModel(self, self._fuzz)
+        self.fuzzTable = LogJTable(self, self._fuzzModel)
+        # 绑定点击事件
+        self.fuzzTable.addMouseListener(popmenuListener(self))
+        # 设置列宽
+        for i in range(self.fuzzTable.getColumnCount()):
+            # python
+            tablecolumn2 = self.fuzzTable.getColumnModel().getColumn(i)
+            tablecolumn2.setPreferredWidth(self._fuzzModel.getCloumnWidth(i))
+        # 设置下水平滚动，垂直滚动ScrollPaneConstants.HORIZONTAL_SCROLLBAR_AS_NEEDED,ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED
+        fuzzscrollPane = JScrollPane(self.fuzzTable, ScrollPaneConstants.VERTICAL_SCROLLBAR_ALWAYS,
+                                    ScrollPaneConstants.HORIZONTAL_SCROLLBAR_AS_NEEDED)
+        fuzzsplitpane.setLeftComponent(fuzzscrollPane)
+
+
+
         optionPane=JPanel()
         self.mainTab.add("Main",mainPanel)
-        self.mainTab.add("Fuzz", fuzzPanel)
+        self.mainTab.add("Fuzz", fuzzsplitpane)
         self.mainTab.add("Options", optionPane)
 
 
@@ -359,7 +437,7 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
     def processHttpMessage(self, toolFlag, messageIsRequest, messageInfo):
         # Proxy Spider Scanner Intruder
         # 判断请求是否是PROXY中的
-        if toolFlag == 4 or toolFlag == 64 or toolFlag == 20:
+        if toolFlag == 4 or toolFlag == 64 or toolFlag == 20 or toolFlag == 1024:
             # 既有响应又有请求，很重要(不然会出现很大的bug)
             if not messageIsRequest:
                 self._stdout.println("Enter print request")
@@ -399,9 +477,12 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
                         # 解决URL去重，1 布隆过滤器 2 哈希表去重
                         # https://www.cnblogs.com/i-love-python/p/11537720.html
                         isExists = bloom.isContains(str(url))
-                        self._stdout.println(isExists)
+                        self._stdout.println(self.isDuplicate)
                         # IHttpRequestResponsePersisted extends IHttpRequestResponse
-                        if not isExists:
+                        #重复开关开启且不存在
+                        if isExists and self.isDuplicate:
+                            return
+                        else:
                             self._log.add(LogEntry(toolFlag, messageInfo,
                                                    self._helpers, self._callbacks))
                             bloom.insert(str(url))
@@ -436,8 +517,9 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
 
 # https://docs.oracle.com/javase/7/docs/api/javax/swing/JTable.html
 class TableModel(DefaultTableModel):
-    def __init__(self, extender):
+    def __init__(self, extender,log):
         self._extender = extender
+        self._log=log
 
     def getCloumnWidth(self, columnIndex):
         if columnIndex == 1:
@@ -451,7 +533,7 @@ class TableModel(DefaultTableModel):
 
     def getRowCount(self):
         # self._extender._stdout.println("test:"+str(self._extender._log.size()))
-        return self._extender._log.size()
+        return self._log.size()
 
     def getColumnClass(self, columnIndex):
         if columnIndex == 8:
@@ -489,7 +571,7 @@ class TableModel(DefaultTableModel):
         return ""
 
     def getValueAt(self, row, columnIndex):
-        logEntry = self._extender._log.get(row)
+        logEntry = self._log.get(row)
         if columnIndex == 0:
             return "#"
         if columnIndex == 1:
