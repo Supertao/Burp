@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 from burp import IBurpExtender, ITab, IMessageEditorTabFactory, IMessageEditorController, IContextMenuFactory
-from burp import IHttpListener, IScannerCheck, IIntruderPayloadGenerator,IIntruderPayloadGeneratorFactory
+from burp import IHttpListener, IScannerCheck, IIntruderPayloadGenerator, IIntruderPayloadGeneratorFactory
 from java.io import PrintWriter
 from java.util import ArrayList
 from threading import Lock
@@ -23,22 +23,39 @@ from javax.swing import BorderFactory
 from java.lang import Boolean
 from javax.swing import ScrollPaneConstants
 from javax.swing import JPopupMenu
-from javax.swing import JMenu,JMenuItem
+from javax.swing import JMenu, JMenuItem
 import time
 import uuid
 import redis
 from hashlib import md5
 import threading
+from jarray import array
+
+
+# 定义一个基本的Fuzzer类
+class BaseFuzzer:
+    def name(self):
+        raise NotImplementedError
+
+    def check(self, data):
+        raise NotImplementedError
+
+    def getMutations(self):
+        raise NotImplementedError
+
+    def reset(self):
+        raise NotImplementedError
+
 
 # 可以规范下导入导出错误
 class duplicateOnOff(ActionListener):
-    def __init__(self,extender):
-        self._extender=extender
+    def __init__(self, extender):
+        self._extender = extender
 
-    def actionPerformed(self,e):
-        button=self._extender.duplicateOnOff
-        if(button.getText()=="Duplicate OFF"):
-            self._extender.isDuplicate=True
+    def actionPerformed(self, e):
+        button = self._extender.duplicateOnOff
+        if (button.getText() == "Duplicate OFF"):
+            self._extender.isDuplicate = True
             button.setText("Duplicate ON ")
         else:
             self._extender.isDuplicate = False
@@ -56,23 +73,41 @@ class actionRunMessage(ActionListener):
         #       #几种弹窗的形式：https://www.cnblogs.com/guohaoyu110/p/6440333.html
         JOptionPane.showMessageDialog(None, "Clear Redis Successfully!")
 
-#启动线程来完成请求的发送
+
+# 启动线程来完成请求的发送
 class buildHttp(threading.Thread):
-    def __init__(self,threadid,extender,log):
+    def __init__(self, threadid, extender, log):
         threading.Thread.__init__(self)
-        self.threadid=threadid
-        self._extender=extender
-        self._log=log
-    #执行代码放在run中，线程在创建后会直接运行run函数
+        self.threadid = threadid
+        self._extender = extender
+        self._log = log
+
+    # 执行代码放在run中，线程在创建后会直接运行run函数
     def run(self):
-        req_url=self._log._url
-        host=self._log._host
-        port=self._log._port
-        protocol=self._log._protocol
-        request_byte=self._extender._helpers.buildHttpRequest(req_url)
-        #self._extender._stdout.println("request:"+self._extender._helpers.bytesToString(request_byte))
-        response_byte=self._extender._callbacks.makeHttpRequest(host,port,protocol,request_byte)
-        #self._extender._stdout.println("repsones:"+self._extender._helpers.bytesToString(response_byte))
+        req_url = self._log._url
+        host = self._log._host
+        port = self._log._port
+        protocol = self._log._protocol
+        method = self._log._method
+        httpService = self._log._httpService
+        if method == "GET":
+            pass
+        elif (method == "POST" or method == "PUT"):
+            pass
+        request_byte = self._extender._helpers.buildHttpRequest(req_url)
+        # self._extender._stdout.println("request:"+self._extender._helpers.bytesToString(request_byte))
+        try:
+            response = self._extender._callbacks.makeHttpRequest(httpService, request_byte)
+            responseInfo = self._extender._helpers.analyzeResponse(response.getResponse())
+            self._extender._stdout.println("repsonse code:" + str(responseInfo.getStatusCode()))
+        except Exception as e:
+            print("BuildHttp error", e)
+
+    def FuzzGet(self):
+        pass
+
+    def FuzzPost(self):
+        pass
 
 
 # 删除选中的行,最终要删除列表中的实体
@@ -139,27 +174,31 @@ class deleteLogtable(ActionListener):
                 logEntry = self._extender._log.get(i)
                 self._extender._callbacks.sendToIntruder(logEntry._host, logEntry._port, logEntry._protocol,
                                                          logEntry._requestResponse.getRequest())
-        #有个bug 需要修复，就是获取的值和显示的差别很大
+        # 有个bug 需要修复，就是获取的值和显示的差别很大（已修复）
         if buttonName == "IntruderFuzz":
             self._extender._stdout.println(buttonName)
             if self._row == -1:
                 return
-            #同样的位置，点击2次以上，会出现异常
+
             for i in self._row:
-                row=self._extender._fuzz.size()
-                #list添加该intruderfuzz 请求
-                self._extender._stdout.println("test:"+str(i)+":row:"+str(row))
-                log=self._extender._log.get(i)
-                #self._extender._stdout.println(type(i))
+                row = self._extender._fuzz.size()
+                # list添加该intruderfuzz 请求
+                self._extender._stdout.println("test:" + str(i) + ":row:" + str(row))
+                log = self._extender._log.get(i)
+                # self._extender._stdout.println(type(i))
                 self._extender._fuzz.add(log)
-                #一定要告知fuzzModel更新了
-                self._extender._fuzzModel.fireTableRowsInserted(row,row)
-                #self.mainTab.setSelectedIndex(2)
-                #重点Fuzz了
+                # 一定要告知fuzzModel更新了
+                self._extender._fuzzModel.fireTableRowsInserted(row, row)
+                # self.mainTab.setSelectedIndex(2)
+                # 重点Fuzz了
                 for i in range(1):
-                    buildHttp(i,self._extender,log).start()
+                    try:
+                        buildHttp(i, self._extender, log).start()
+                    except Exception as e:
+                        print("buildhttp is error!", e)
 
             return
+
 
 class popmenuListener(MouseAdapter):
     def __init__(self, extender):
@@ -238,6 +277,32 @@ class WebFuzz(IIntruderPayloadGenerator):
         return
 
 
+
+
+class IntruderFuzz(ActionListener):
+    def __init__(self,extender,selectedMessages,bounds):
+        self._extender=extender
+        self._selectedMessages=selectedMessages
+        self._bounds=bounds
+
+    def actionPerformed(self, e):
+        requestResponse=self._selectedMessages[0]
+        httpservice=requestResponse.getHttpService()
+        if httpservice.getProtocol()=="https":
+            useHttps=True
+        else:
+            useHttps=False
+        request=requestResponse.getRequest()
+        insertionOffsets=ArrayList()
+        #https://portswigger.net/burp/extender/writing-your-first-burp-suite-extension
+        insertionOffsets.add(array([self._bounds[0],self._bounds[1]], 'i'))
+        #拉起主动扫描
+        #doActiveScan(String host,int port,boolean useHttps,byte[] request,List<int[]> insertionPointOffsets);
+        self._extender._callbacks.doActiveScan(httpservice.getHost(),httpservice.getPort(),useHttps,request,insertionOffsets)
+
+
+
+
 class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController, IContextMenuFactory, IScannerCheck,
                    IIntruderPayloadGeneratorFactory):
     # Burp extensions 列表中的扩展名
@@ -269,7 +334,7 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
 
         # 0.定义burp插件的主界面（上中下三个部分）
         # https: // blog.csdn.net / xietansheng / article / details / 74366517
-        self.mainTab=JTabbedPane()
+        self.mainTab = JTabbedPane()
         mainPanel = JPanel()
         mainPanel.setLayout(BorderLayout())
         # createEmptyBorder(int top,int left,int bottom,int right)
@@ -290,8 +355,8 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
         selectIntruder = JCheckBox("Intruder")
         selectCookies = JCheckBox("Cookies")
         self.duplicateOnOff = JButton("Duplicate OFF")
-        #默认值为不开启
-        self.isDuplicate=False
+        # 默认值为不开启
+        self.isDuplicate = False
         self.duplicateOnOff.addActionListener(duplicateOnOff(self))
         connDb = JButton("ConnDb")
         redisClear = JButton("Redis Clear")
@@ -311,7 +376,7 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
 
         # 2.定义log记录组件
         splitpane = JSplitPane(JSplitPane.VERTICAL_SPLIT)  # 垂直分布
-        self._dataModel = TableModel(self,self._log)
+        self._dataModel = TableModel(self, self._log)
         self.logTable = LogJTable(self, self._dataModel)
         # 绑定点击事件
         self.logTable.addMouseListener(popmenuListener(self))
@@ -363,16 +428,13 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
             tablecolumn2.setPreferredWidth(self._fuzzModel.getCloumnWidth(i))
         # 设置下水平滚动，垂直滚动ScrollPaneConstants.HORIZONTAL_SCROLLBAR_AS_NEEDED,ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED
         fuzzscrollPane = JScrollPane(self.fuzzTable, ScrollPaneConstants.VERTICAL_SCROLLBAR_ALWAYS,
-                                    ScrollPaneConstants.HORIZONTAL_SCROLLBAR_AS_NEEDED)
+                                     ScrollPaneConstants.HORIZONTAL_SCROLLBAR_AS_NEEDED)
         fuzzsplitpane.setLeftComponent(fuzzscrollPane)
 
-
-
-        optionPane=JPanel()
-        self.mainTab.add("Main",mainPanel)
+        optionPane = JPanel()
+        self.mainTab.add("Main", mainPanel)
         self.mainTab.add("Fuzz", fuzzsplitpane)
         self.mainTab.add("Options", optionPane)
-
 
         # callbacks.registerProxyListener(self)
         # 美容UI
@@ -419,12 +481,20 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
         return WebFuzz(self, attack)
 
     # 定义请求、响应中的请求Fuzz
+    # IContextMenuInvocation invocation
     def createMenuItems(self, invocation):
-        menuList=ArrayList()
-        menu=JMenu("Web Fuzz")
-        intruderSelected=JMenuItem("IntruderFuzz")
+        menuList = ArrayList()
+        menu = JMenu("Web Fuzz")
+        intruderSelected = JMenuItem("IntruderFuzz")
         menu.add(intruderSelected)
         menuList.add(menu)
+        #IHttpRequestResponse[]
+        selectedMessagess=invocation.getSelectedMessages()
+        #start and end offsets
+        bounds=invocation.getSelectionBounds()
+        #判断选中的请求存在，且选中的内容不为空
+        if(selectedMessagess != None or selectedMessagess.length>1 or bounds!= None or bounds.length>=2):
+            intruderSelected.addActionListener(IntruderFuzz(self,selectedMessagess,bounds))
         return menuList
 
     '''
@@ -435,9 +505,11 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
     '''
 
     def processHttpMessage(self, toolFlag, messageIsRequest, messageInfo):
+
+        #scanner 扫描的添加到Fuzz列表中去
         # Proxy Spider Scanner Intruder
         # 判断请求是否是PROXY中的
-        if toolFlag == 4 or toolFlag == 64 or toolFlag == 20 or toolFlag == 1024:
+        if toolFlag == 4 or toolFlag == 32 or toolFlag == 16 or toolFlag == 64 or toolFlag == 1024:
             # 既有响应又有请求，很重要(不然会出现很大的bug)
             if not messageIsRequest:
                 self._stdout.println("Enter print request")
@@ -471,35 +543,40 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
                     fuzzid = ''.join(uid.split('-'))
                     self._stdout.println("Url:" + str(url) + "\n" + "".join(newHeaders) + "\n" + bodyStrings)
                     try:
-                        self._lock.acquire()
-                        row = self._log.size()
-                        bloom = BloomFilter()
-                        # 解决URL去重，1 布隆过滤器 2 哈希表去重
-                        # https://www.cnblogs.com/i-love-python/p/11537720.html
-                        isExists = bloom.isContains(str(url))
-                        self._stdout.println(self.isDuplicate)
-                        # IHttpRequestResponsePersisted extends IHttpRequestResponse
-                        #重复开关开启且不存在
-                        if isExists and self.isDuplicate:
-                            return
+                        if toolFlag==16:
+                            self._lock.acquire()
+                            row_fuzz=self._fuzz.size()
+                            self._fuzz.add(LogEntry(toolFlag,messageInfo,self._helpers,self._callbacks))
+                            self._fuzzModel.fireTableRowsInserted(row_fuzz,row_fuzz)
+                            self._lock.release()
                         else:
-                            self._log.add(LogEntry(toolFlag, messageInfo,
-                                                   self._helpers, self._callbacks))
-                            bloom.insert(str(url))
-                            # 通知表格发生增加的变化
-                            # self.fireTableRowsInserted(row,row)
-                            self._dataModel.fireTableRowsInserted(row, row)
-                            # 解决row 值不匹配
-                            # self._stdout.println(int(row + 1))
-                        self._lock.release()
+                            self._lock.acquire()
+                            row = self._log.size()
+                            bloom = BloomFilter()
+                            # 解决URL去重，1 布隆过滤器 2 哈希表去重
+                            # https://www.cnblogs.com/i-love-python/p/11537720.html
+                            isExists = bloom.isContains(str(url))
+                            # IHttpRequestResponsePersisted extends IHttpRequestResponse
+                            # 重复开关开启且不存在
+                            self._stdout.println(str(isExists) + ":" + str(self.isDuplicate))
+                            if isExists and self.isDuplicate:
+                                pass
+                            else:
+                                self._log.add(LogEntry(toolFlag, messageInfo,
+                                                       self._helpers, self._callbacks))
+                                bloom.insert(str(url))
+                                # 通知表格发生增加的变化
+                                # self.fireTableRowsInserted(row,row)
+                                self._dataModel.fireTableRowsInserted(row, row)
+                                # 解决row 值不匹配
+                                # self._stdout.println(int(row + 1))
+                            self._lock.release()
                     except Exception as e:
                         print("dataModel error", e)
                         return
                 except Exception as e:
                     print("messageIsRequest is error!", e)
                     return
-            else:
-                pass
 
     # Give the new tab a name
     def getTabCaption(self):
@@ -517,9 +594,9 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
 
 # https://docs.oracle.com/javase/7/docs/api/javax/swing/JTable.html
 class TableModel(DefaultTableModel):
-    def __init__(self, extender,log):
+    def __init__(self, extender, log):
         self._extender = extender
-        self._log=log
+        self._log = log
 
     def getCloumnWidth(self, columnIndex):
         if columnIndex == 1:
@@ -659,7 +736,8 @@ class LogEntry:
         self._host = self._url.getHost()
         self._port = self._url.getPort()
         self._time = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
-        if self._requestResponse.getHttpService().getProtocol() == "https":
+        self._httpService = self._requestResponse.getHttpService()
+        if self._httpService.getProtocol() == "https":
             self._protocol = True
         else:
             self._protocol = False
