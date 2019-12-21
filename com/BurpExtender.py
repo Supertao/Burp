@@ -24,6 +24,11 @@ from java.lang import Boolean
 from javax.swing import ScrollPaneConstants
 from javax.swing import JPopupMenu
 from javax.swing import JMenu, JMenuItem
+from javax.swing.table import TableCellRenderer, DefaultTableCellRenderer
+from java.awt import Color
+from javax.swing import JList
+from javax.swing import JTextField
+from javax.swing import JLabel
 import time
 import uuid
 import redis
@@ -244,21 +249,22 @@ class popmenuListener(MouseAdapter):
 class WebFuzz(IIntruderPayloadGenerator):
     def __init__(self, extender, attack):
         self._extender = extender
+        self.PAYLOADSS = extender.PAYLOADSS
         self.maxpayloads = 5
         self.numpayloads = 0
-        corups = open('Fuzzing.pay', 'r')
+        # corups = open('Fuzzing.pay', 'r')
         # self._extender._stdout.println(corups)
-        self.PAYLOADSS = []
-        for line in corups:
-            # self._extender._stdout.println(line)
-            self.PAYLOADSS.append(bytearray(line.strip('\n')))
-        self._extender._stdout.println(len(self.PAYLOADSS))
+        self.PAYLOADS = []
+        for line in self.PAYLOADSS:
+            self._extender._stdout.println(line)
+            self.PAYLOADS.append(bytearray(line))
+        # self._extender._stdout.println(len(self.PAYLOADSS))
 
     # 决定生成器是否能够提供更多payload
     # boolean
     def hasMorePayloads(self):
         # 如果达到最大次数就返回false退出，但并不是直接退出而是到reset函数，这里reset函数就是清零
-        if (self.numpayloads < len(self.PAYLOADSS)):
+        if (self.numpayloads < len(self.PAYLOADS)):
             return True
         else:
             return False
@@ -267,7 +273,7 @@ class WebFuzz(IIntruderPayloadGenerator):
     def getNextPayload(self, payload):
         # 传进来的参数是payload
         payload = "".join(chr(x) for x in payload)
-        payload += self.PAYLOADSS[self.numpayloads]
+        payload += self.PAYLOADS[self.numpayloads]
         self.numpayloads += 1
         return payload
 
@@ -277,30 +283,27 @@ class WebFuzz(IIntruderPayloadGenerator):
         return
 
 
-
-
 class IntruderFuzz(ActionListener):
-    def __init__(self,extender,selectedMessages,bounds):
-        self._extender=extender
-        self._selectedMessages=selectedMessages
-        self._bounds=bounds
+    def __init__(self, extender, selectedMessages, bounds):
+        self._extender = extender
+        self._selectedMessages = selectedMessages
+        self._bounds = bounds
 
     def actionPerformed(self, e):
-        requestResponse=self._selectedMessages[0]
-        httpservice=requestResponse.getHttpService()
-        if httpservice.getProtocol()=="https":
-            useHttps=True
+        requestResponse = self._selectedMessages[0]
+        httpservice = requestResponse.getHttpService()
+        if httpservice.getProtocol() == "https":
+            useHttps = True
         else:
-            useHttps=False
-        request=requestResponse.getRequest()
-        insertionOffsets=ArrayList()
-        #https://portswigger.net/burp/extender/writing-your-first-burp-suite-extension
-        insertionOffsets.add(array([self._bounds[0],self._bounds[1]], 'i'))
-        #拉起主动扫描
-        #doActiveScan(String host,int port,boolean useHttps,byte[] request,List<int[]> insertionPointOffsets);
-        self._extender._callbacks.doActiveScan(httpservice.getHost(),httpservice.getPort(),useHttps,request,insertionOffsets)
-
-
+            useHttps = False
+        request = requestResponse.getRequest()
+        insertionOffsets = ArrayList()
+        # https://portswigger.net/burp/extender/writing-your-first-burp-suite-extension
+        insertionOffsets.add(array([self._bounds[0], self._bounds[1]], 'i'))
+        # 拉起主动扫描
+        # doActiveScan(String host,int port,boolean useHttps,byte[] request,List<int[]> insertionPointOffsets);
+        self._extender._callbacks.doActiveScan(httpservice.getHost(), httpservice.getPort(), useHttps, request,
+                                               insertionOffsets)
 
 
 class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController, IContextMenuFactory, IScannerCheck,
@@ -419,8 +422,15 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
         fuzzsplitpane = JSplitPane(JSplitPane.VERTICAL_SPLIT)  # 垂直分布
         self._fuzzModel = TableModel(self, self._fuzz)
         self.fuzzTable = LogJTable(self, self._fuzzModel)
+        # 添加渲染器
+        try:
+            cloumnrenderer = self.fuzzTable.getColumnModel().getColumn(5)
+            tcr = FuzzTableCellRenderer(self)
+            cloumnrenderer.setCellRenderer(tcr)
+        except Exception as e:
+            print("CellRenderer error!", e)
         # 绑定点击事件
-        self.fuzzTable.addMouseListener(popmenuListener(self))
+        # self.fuzzTable.addMouseListener()
         # 设置列宽
         for i in range(self.fuzzTable.getColumnCount()):
             # python
@@ -431,18 +441,38 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
                                      ScrollPaneConstants.HORIZONTAL_SCROLLBAR_AS_NEEDED)
         fuzzsplitpane.setLeftComponent(fuzzscrollPane)
 
-        optionPane = JPanel()
+        # 初始化读取payload文件
+        self.PAYLOADSS = []
+        corups = open('Fuzzing.pay', 'r')
+        # self._extender._stdout.println(corups)
+        for line in corups:
+            # self._extender._stdout.println(line)
+            self.PAYLOADSS.append(line.strip('\n'))
+
+        payloadlist = JList(self.PAYLOADSS)
+        optionSplitpane = JSplitPane()
+        optionScrollPane = JScrollPane(payloadlist, ScrollPaneConstants.VERTICAL_SCROLLBAR_ALWAYS,
+                                       ScrollPaneConstants.HORIZONTAL_SCROLLBAR_AS_NEEDED)
+        optionTextField = JTextField(8)
+        label = JLabel("""<html>Web Fuzz<br><body><p>A payload in Webfuzz is a source of data.</p></body></html>""")
+        optionAddPanel = JPanel()
+        optionAddPanel.add(label)
+        optionSplitpane.setLeftComponent(optionScrollPane)
+        optionSplitpane.setRightComponent(optionAddPanel)
+
         self.mainTab.add("Main", mainPanel)
         self.mainTab.add("Fuzz", fuzzsplitpane)
-        self.mainTab.add("Options", optionPane)
+        self.mainTab.add("Options", optionSplitpane)
 
         # callbacks.registerProxyListener(self)
         # 美容UI
         callbacks.customizeUiComponent(splitpane)
         callbacks.customizeUiComponent(mainPanel)
+        callbacks.customizeUiComponent(fuzzsplitpane)
         callbacks.customizeUiComponent(self.mainTab)
         callbacks.customizeUiComponent(self.logTable)
         callbacks.customizeUiComponent(logscrollPane)
+        callbacks.customizeUiComponent(optionScrollPane)
         callbacks.customizeUiComponent(requestResponseView)
         # 一定要加ITab,不然没有界面
         callbacks.addSuiteTab(self)
@@ -488,13 +518,19 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
         intruderSelected = JMenuItem("IntruderFuzz")
         menu.add(intruderSelected)
         menuList.add(menu)
-        #IHttpRequestResponse[]
-        selectedMessagess=invocation.getSelectedMessages()
-        #start and end offsets
-        bounds=invocation.getSelectionBounds()
-        #判断选中的请求存在，且选中的内容不为空
-        if(selectedMessagess != None or selectedMessagess.length>1 or bounds!= None or bounds.length>=2):
-            intruderSelected.addActionListener(IntruderFuzz(self,selectedMessagess,bounds))
+        # IHttpRequestResponse[]
+        selectedMessagess = invocation.getSelectedMessages()
+        # start and end offsets
+        bounds = invocation.getSelectionBounds()
+        # 判断选中的请求存在，且选中的内容不为空
+        # bug 一定要用len() 代替xx.length
+        # JOptionPane.showMessageDialog(None, "Select some param to Fuzz!")
+        self._stdout.println("bounds:" + str(len(bounds)))
+        if (selectedMessagess != None and bounds != None and len(bounds) >= 2):
+            self._stdout.println("bounds:" + str(len(bounds)))
+            intruderSelected.addActionListener(IntruderFuzz(self, selectedMessagess, bounds))
+        else:
+            JOptionPane.showMessageDialog(None, "Select some param to Fuzz!")
         return menuList
 
     '''
@@ -506,7 +542,7 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
 
     def processHttpMessage(self, toolFlag, messageIsRequest, messageInfo):
 
-        #scanner 扫描的添加到Fuzz列表中去
+        # scanner 扫描的添加到Fuzz列表中去
         # Proxy Spider Scanner Intruder
         # 判断请求是否是PROXY中的
         if toolFlag == 4 or toolFlag == 32 or toolFlag == 16 or toolFlag == 64 or toolFlag == 1024:
@@ -543,11 +579,11 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
                     fuzzid = ''.join(uid.split('-'))
                     self._stdout.println("Url:" + str(url) + "\n" + "".join(newHeaders) + "\n" + bodyStrings)
                     try:
-                        if toolFlag==16:
+                        if toolFlag == 16:
                             self._lock.acquire()
-                            row_fuzz=self._fuzz.size()
-                            self._fuzz.add(LogEntry(toolFlag,messageInfo,self._helpers,self._callbacks))
-                            self._fuzzModel.fireTableRowsInserted(row_fuzz,row_fuzz)
+                            row_fuzz = self._fuzz.size()
+                            self._fuzz.add(LogEntry(toolFlag, messageInfo, self._helpers, self._callbacks))
+                            self._fuzzModel.fireTableRowsInserted(row_fuzz, row_fuzz)
                             self._lock.release()
                         else:
                             self._lock.acquire()
@@ -590,6 +626,33 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
     public int getColumnCount();
     public Object getValueAt(int row, int column);
     '''
+
+
+# 渲染器
+class FuzzTableCellRenderer(TableCellRenderer):
+    def __init__(self, extender):
+        self._extender = extender
+        self.default_renderer = DefaultTableCellRenderer()
+
+    def getTableCellRendererComponent(self, table, value, isSelected, hasFocus, row, column):
+
+        bg = self.default_renderer.getTableCellRendererComponent(table, value, isSelected, hasFocus, row, column)
+        # 获取每行的logentry
+        LogEntry = self._extender._fuzz.get(row)
+        if LogEntry._status is None:
+            return
+
+        if (2 <= LogEntry._status / 100 < 3):
+            bg.setBackground(Color.GREEN)
+        elif (3 <= LogEntry._status / 100 < 4):
+            bg.setBackground(Color.YELLOW)
+        elif (4 <= LogEntry._status / 100 < 5):
+            bg.setBackground(Color.RED)
+        elif (5 <= LogEntry._status / 100 < 6):
+            bg.setBackground(Color.ORANGE)
+        else:
+            bg.setBackground(Color.GREY)
+        return self.default_renderer
 
 
 # https://docs.oracle.com/javase/7/docs/api/javax/swing/JTable.html
@@ -644,7 +707,7 @@ class TableModel(DefaultTableModel):
         if columnIndex == 9:
             return "Time"
         if columnIndex == 10:
-            return "Comment"
+            return ""
         return ""
 
     def getValueAt(self, row, columnIndex):
@@ -670,7 +733,7 @@ class TableModel(DefaultTableModel):
         if columnIndex == 9:
             return logEntry._time
         if columnIndex == 10:
-            return "Comment"
+            return ""
         return ""
 
 
