@@ -1,40 +1,41 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 
-from burp import IBurpExtender, ITab, IMessageEditorTabFactory, IMessageEditorController, IContextMenuFactory
-from burp import IHttpListener, IScannerCheck, IIntruderPayloadGenerator, IIntruderPayloadGeneratorFactory
-from java.io import PrintWriter
-from java.util import ArrayList
+import threading
+import time
+import uuid
+from hashlib import md5
 from threading import Lock
+
+import redis
+from burp import IBurpExtender, ITab, IMessageEditorController, IContextMenuFactory
+from burp import IHttpListener, IScannerCheck, IIntruderPayloadGenerator, IIntruderPayloadGeneratorFactory
+from jarray import array
+from java.awt import BorderLayout
+from java.awt import Color
+from java.awt import FlowLayout
+from java.awt.event import ActionListener
+from java.awt.event import MouseAdapter
+from java.io import PrintWriter
+from java.lang import Boolean
+from java.util import ArrayList
+from javax.swing import BorderFactory
+from javax.swing import JButton
+from javax.swing import JCheckBox
+from javax.swing import JLabel
+from javax.swing import JList
+from javax.swing import JMenu, JMenuItem
+from javax.swing import JOptionPane
+from javax.swing import JPanel
+from javax.swing import JPopupMenu
 from javax.swing import JScrollPane
 from javax.swing import JSplitPane
 from javax.swing import JTabbedPane
-from javax.swing import JPanel
 from javax.swing import JTable
-from javax.swing.table import DefaultTableModel
-from java.awt import BorderLayout
-from java.awt import FlowLayout
-from javax.swing import JCheckBox
-from javax.swing import JButton
-from javax.swing import JOptionPane
-from java.awt.event import ActionListener
-from java.awt.event import MouseAdapter
-from javax.swing import BorderFactory
-from java.lang import Boolean
-from javax.swing import ScrollPaneConstants
-from javax.swing import JPopupMenu
-from javax.swing import JMenu, JMenuItem
-from javax.swing.table import TableCellRenderer, DefaultTableCellRenderer
-from java.awt import Color
-from javax.swing import JList
 from javax.swing import JTextField
-from javax.swing import JLabel
-import time
-import uuid
-import redis
-from hashlib import md5
-import threading
-from jarray import array
+from javax.swing import ScrollPaneConstants
+from javax.swing.table import DefaultTableModel
+from javax.swing.table import TableCellRenderer, DefaultTableCellRenderer
 
 
 # 定义一个基本的Fuzzer类
@@ -117,9 +118,15 @@ class buildHttp(threading.Thread):
 
 # 删除选中的行,最终要删除列表中的实体
 class deleteLogtable(ActionListener):
-    def __init__(self, extender, row):
+    def __init__(self, extender, row, sign):
         self._extender = extender
         self._row = row
+        if sign == "fuzz":
+            self._logx = self._extender._fuzz
+            self._model = self._extender._fuzzModel
+        elif sign == "main":
+            self._logx = self._extender._log
+            self._model = self._extender._dataModel
 
     def actionPerformed(self, evt):
         # 通过获取按钮的内容来做相对的响应（https://www.cnblogs.com/dengyungao/p/7525013.html）
@@ -130,16 +137,16 @@ class deleteLogtable(ActionListener):
                 return
             for i in self._row:
                 self._extender._stdout.println("remove:" + str(i))
-                self._extender._log.remove(i)
+                self._logx.remove(i)
                 # 一定要通知数据模型更新数据
-                self._extender._dataModel.fireTableDataChanged()
+                self._model.fireTableDataChanged()
             # JOptionPane.showMessageDialog(None, "Remove Successfully!")
         # 一定要有二次点击确定,防止误删除
         if buttonName == "Clear All Histroy":
             self._extender._stdout.println(buttonName)
             if self._row == -1:
                 return
-            isSure = JOptionPane.showMessageDialog(self._extender.logTable, "Are you Sure to Clear All Histroy?",
+            isSure = JOptionPane.showMessageDialog(None, "Are you Sure to Clear All Histroy?",
                                                    "Sure",
                                                    JOptionPane.YES_NO_CANCEL_OPTION)
             self._extender._stdout.println("xxx:" + str(isSure))
@@ -149,7 +156,7 @@ class deleteLogtable(ActionListener):
                 self._extender._log.clear()
                 self._extender._stdout.println("clear all history" + str(self._extender._log.size()))
                 # 一定要通知数据模型更新数据
-                self._extender._dataModel.fireTableDataChanged()
+                self._model.fireTableDataChanged()
 
         if buttonName == "Send to Repeater":
             self._extender._stdout.println(buttonName)
@@ -157,26 +164,26 @@ class deleteLogtable(ActionListener):
                 return
 
             for i in self._row:
-                logEntry = self._extender._log.get(i)
+                logEntry = self._logx.get(i)
                 self._extender._callbacks.sendToRepeater(logEntry._host, logEntry._port, logEntry._protocol,
                                                          logEntry._requestResponse.getRequest(), str(i))
 
-        if buttonName == "Send to Repeater":
+        if buttonName == "Active Scan":
             self._extender._stdout.println(buttonName)
             if self._row == -1:
                 return
 
             for i in self._row:
-                logEntry = self._extender._log.get(i)
-                self._extender._callbacks.sendToRepeater(logEntry._host, logEntry._port, logEntry._protocol,
-                                                         logEntry._requestResponse.getRequest(), str(i))
+                logEntry = self._logx.get(i)
+                self._extender._callbacks.doActiveScan(logEntry._host, logEntry._port, logEntry._protocol,
+                                                       logEntry._requestResponse.getRequest())
 
         if buttonName == "Send to Intruder":
             self._extender._stdout.println(buttonName)
             if self._row == -1:
                 return
             for i in self._row:
-                logEntry = self._extender._log.get(i)
+                logEntry = self._logx.get(i)
                 self._extender._callbacks.sendToIntruder(logEntry._host, logEntry._port, logEntry._protocol,
                                                          logEntry._requestResponse.getRequest())
         # 有个bug 需要修复，就是获取的值和显示的差别很大（已修复）
@@ -206,8 +213,15 @@ class deleteLogtable(ActionListener):
 
 
 class popmenuListener(MouseAdapter):
-    def __init__(self, extender):
+    def __init__(self, extender, sign):
         self._extender = extender
+        self._sign = sign
+        if sign == "fuzz":
+            self._table = self._extender.fuzzTable
+            self.modelx = self._extender._fuzzModel
+        elif sign == "main":
+            self._table = self._extender.logTable
+            self.modelx = self._extender._dataModel
 
     def mouseClicked(self, evt):
         # 右键值为3
@@ -232,18 +246,18 @@ class popmenuListener(MouseAdapter):
             mpopMenu.addSeparator()
             mpopMenu.add(copyMenu)
             # 通过点击位置找到点击为表格中的行
-            self._extender._focusedRow = self._extender.logTable.getSelectedRows();
+            self._extender._focusedRow = self._table.getSelectedRows();
             self._extender._stdout.println(self._extender._focusedRow)
             # 一定要为按钮添加点击事件
-            deleteMenu.addActionListener(deleteLogtable(self._extender, self._extender._focusedRow))
-            clearMenu.addActionListener(deleteLogtable(self._extender, self._extender._focusedRow))
-            repeaterMenu.addActionListener(deleteLogtable(self._extender, self._extender._focusedRow))
-            intruderMenu.addActionListener(deleteLogtable(self._extender, self._extender._focusedRow))
+            deleteMenu.addActionListener(deleteLogtable(self._extender, self._extender._focusedRow, self._sign))
+            clearMenu.addActionListener(deleteLogtable(self._extender, self._extender._focusedRow, self._sign))
+            repeaterMenu.addActionListener(deleteLogtable(self._extender, self._extender._focusedRow, self._sign))
+            intruderMenu.addActionListener(deleteLogtable(self._extender, self._extender._focusedRow, self._sign))
             # deleteMenu.addActionListener()
-            # activeMenu.addActionListener(fuzzscan(self._extender, self._extender._focusedRow))
-            intruderFuzzMenu.addActionListener(deleteLogtable(self._extender, self._extender._focusedRow))
+            activeMenu.addActionListener(deleteLogtable(self._extender, self._extender._focusedRow, self._sign))
+            intruderFuzzMenu.addActionListener(deleteLogtable(self._extender, self._extender._focusedRow, self._sign))
             # 一定要指定位置显示弹窗
-            mpopMenu.show(self._extender.logTable, evt.getX(), evt.getY())
+            mpopMenu.show(self._table, evt.getX(), evt.getY())
 
 
 class WebFuzz(IIntruderPayloadGenerator):
@@ -311,6 +325,8 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
     # Burp extensions 列表中的扩展名
     _extensionName = "Fuzz 2.0"
     _labelName = "Web Fuzz"
+    _mainName = "main"
+    _fuzzName = "fuzz"
 
     # void
     def registerExtenderCallbacks(self, callbacks):
@@ -380,9 +396,9 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
         # 2.定义log记录组件
         splitpane = JSplitPane(JSplitPane.VERTICAL_SPLIT)  # 垂直分布
         self._dataModel = TableModel(self, self._log)
-        self.logTable = LogJTable(self, self._dataModel)
+        self.logTable = LogJTable(self, self._dataModel, self._mainName)
         # 绑定点击事件
-        self.logTable.addMouseListener(popmenuListener(self))
+        self.logTable.addMouseListener(popmenuListener(self, self._mainName))
 
         # 设置列宽
         for i in range(self.logTable.getColumnCount()):
@@ -421,7 +437,7 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
         # 4.定义Fuzz记录组件
         fuzzsplitpane = JSplitPane(JSplitPane.VERTICAL_SPLIT)  # 垂直分布
         self._fuzzModel = TableModel(self, self._fuzz)
-        self.fuzzTable = LogJTable(self, self._fuzzModel)
+        self.fuzzTable = LogJTable(self, self._fuzzModel, self._fuzzName)
         # 添加渲染器
         try:
             cloumnrenderer = self.fuzzTable.getColumnModel().getColumn(5)
@@ -429,13 +445,15 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
             cloumnrenderer.setCellRenderer(tcr)
         except Exception as e:
             print("CellRenderer error!", e)
-        # 绑定点击事件
-        # self.fuzzTable.addMouseListener()
+
         # 设置列宽
         for i in range(self.fuzzTable.getColumnCount()):
             # python
             tablecolumn2 = self.fuzzTable.getColumnModel().getColumn(i)
             tablecolumn2.setPreferredWidth(self._fuzzModel.getCloumnWidth(i))
+        # 绑定点击事件
+        self.fuzzTable.addMouseListener(popmenuListener(self, self._fuzzName))
+
         # 设置下水平滚动，垂直滚动ScrollPaneConstants.HORIZONTAL_SCROLLBAR_AS_NEEDED,ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED
         fuzzscrollPane = JScrollPane(self.fuzzTable, ScrollPaneConstants.VERTICAL_SCROLLBAR_ALWAYS,
                                      ScrollPaneConstants.HORIZONTAL_SCROLLBAR_AS_NEEDED)
@@ -525,7 +543,13 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
         # 判断选中的请求存在，且选中的内容不为空
         # bug 一定要用len() 代替xx.length
         # JOptionPane.showMessageDialog(None, "Select some param to Fuzz!")
-        self._stdout.println("bounds:" + str(len(bounds)))
+        try:
+            if bounds[0]== bounds[1]:
+                JOptionPane.showMessageDialog(None, "Select some param to Fuzz!")
+                return
+        except Exception as e:
+            self._stdout.println("bounds",e)
+
         if (selectedMessagess != None and bounds != None and len(bounds) >= 2):
             self._stdout.println("bounds:" + str(len(bounds)))
             intruderSelected.addActionListener(IntruderFuzz(self, selectedMessagess, bounds))
@@ -659,7 +683,7 @@ class FuzzTableCellRenderer(TableCellRenderer):
 class TableModel(DefaultTableModel):
     def __init__(self, extender, log):
         self._extender = extender
-        self._log = log
+        self._logx = log
 
     def getCloumnWidth(self, columnIndex):
         if columnIndex == 1:
@@ -673,7 +697,7 @@ class TableModel(DefaultTableModel):
 
     def getRowCount(self):
         # self._extender._stdout.println("test:"+str(self._extender._log.size()))
-        return self._log.size()
+        return self._logx.size()
 
     def getColumnClass(self, columnIndex):
         if columnIndex == 8:
@@ -711,7 +735,7 @@ class TableModel(DefaultTableModel):
         return ""
 
     def getValueAt(self, row, columnIndex):
-        logEntry = self._log.get(row)
+        logEntry = self._logx.get(row)
         if columnIndex == 0:
             return "#"
         if columnIndex == 1:
@@ -739,15 +763,19 @@ class TableModel(DefaultTableModel):
 
 # Jtable https://www.169it.com/article/12959732718244742024.html
 class LogJTable(JTable):
-    def __init__(self, extender, model):
+    def __init__(self, extender, model, sign):
         self._extender = extender
+        if sign == "fuzz":
+            self._logx = self._extender._fuzz
+        elif sign == "main":
+            self._logx = self._extender._log
         self.setModel(model)
 
     # 解决界面上请求和响应被选中时实时更新
     def changeSelection(self, row, column, toggle, extend):
         try:
             # 获取选中的行的详细请求内容
-            logEntity = self._extender._log.get(row)
+            logEntity = self._logx.get(row)
             # void setMessage(byte[] message, boolean isRequest);
 
             self._extender._requestView.setMessage(logEntity._requestResponse.getRequest(), True)
