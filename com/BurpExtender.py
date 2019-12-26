@@ -6,6 +6,7 @@ import time
 import uuid
 import re
 import redis
+import json
 from hashlib import md5
 from threading import Lock
 from burp import IBurpExtender, ITab, IMessageEditorController, IContextMenuFactory
@@ -51,6 +52,43 @@ class BaseFuzzer:
 
     def reset(self):
         raise NotImplementedError
+
+class JsonFuzzer(BaseFuzzer):
+    def name(self):
+        return "JSONFuzzer"
+
+    def check(self, data):
+        try:
+            json.load(data)
+            return True
+        except Exception as e:
+            return False
+            print("JSON error!",e)
+    '''
+    字典的每个键值
+    key = > value
+    对用冒号: 分割，每个键值对之间用逗号, 分割，整个字典包括在花括号
+    {}
+    '''
+    @staticmethod
+    def Segmentation(json_data):
+        segmentats=dict()
+        def _segmentation(object_,key):
+            if isinstance(object_,dict):
+                for object_key in object_:
+                    pass
+            else:
+                segmentats[key]=object_
+        _segmentation(json_data,None)
+        return segmentats
+
+
+
+    def getMutations(self):
+        return
+
+    def reset(self):
+        return
 
 
 # 可以规范下导入导出错误
@@ -195,13 +233,20 @@ class deleteLogtable(ActionListener):
             for i in self._row:
                 row = self._extender._fuzz.size()
                 # list添加该intruderfuzz 请求
-                self._extender._stdout.println("test:" + str(i) + ":row:" + str(row))
+                #self._extender._stdout.println("test:" + str(i) + ":row:" + str(row))
                 log = self._extender._log.get(i)
                 # self._extender._stdout.println(type(i))
                 # 这里开始判断request中是否存在json请求，识别之后再添加list，并插入工具位置，然后再变换payload
+                '''
+                {"message":"ok","nu":"11111111111","ischeck":"1","com":"yuantong",
+                "status":"200","condition":"F00","state":"3",
+                "data":[{"time":"2019-11-27 22:21:11","context":"查无结果",
+                "ftime":"2019-11-27 22:21:11"}]}
+                '''
                 if re.search(self._extender.JSON_RECONITION_REGEX, log._data):
-                    message = "Json data find %s " % log._data
+                    message = "Json data find {}".format(log._data)
                     self._extender._stdout.println(message)
+
                 self._extender._fuzz.add(log)
                 # 一定要告知fuzzModel更新了
                 self._extender._fuzzModel.fireTableRowsInserted(row, row)
@@ -331,6 +376,7 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
     _labelName = "Web Fuzz"
     _mainName = "main"
     _fuzzName = "fuzz"
+    JSON_RECONITION_REGEX = r'(?s)\A(\s*\[)*\s*\{.*"[^"]+"\s*:\s*("[^"]*"|\d+|true|false|null).*\}\s*(\]\s*)*\Z'
 
     # void
     def registerExtenderCallbacks(self, callbacks):
