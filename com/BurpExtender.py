@@ -4,10 +4,10 @@
 import threading
 import time
 import uuid
+import re
+import redis
 from hashlib import md5
 from threading import Lock
-
-import redis
 from burp import IBurpExtender, ITab, IMessageEditorController, IContextMenuFactory
 from burp import IHttpListener, IScannerCheck, IIntruderPayloadGenerator, IIntruderPayloadGeneratorFactory
 from jarray import array
@@ -198,6 +198,10 @@ class deleteLogtable(ActionListener):
                 self._extender._stdout.println("test:" + str(i) + ":row:" + str(row))
                 log = self._extender._log.get(i)
                 # self._extender._stdout.println(type(i))
+                # 这里开始判断request中是否存在json请求，识别之后再添加list，并插入工具位置，然后再变换payload
+                if re.search(self._extender.JSON_RECONITION_REGEX, log._data):
+                    message = "Json data find %s " % log._data
+                    self._extender._stdout.println(message)
                 self._extender._fuzz.add(log)
                 # 一定要告知fuzzModel更新了
                 self._extender._fuzzModel.fireTableRowsInserted(row, row)
@@ -818,6 +822,12 @@ class LogEntry:
         requestInfo = self._helpers.analyzeRequest(messageInfo)
         self._method = requestInfo.getMethod()
         self._url = requestInfo.getUrl()
+        self.content_type = requestInfo.getContentType()
+        # 请求data提取
+        bodyoffset = requestInfo.getBodyOffset()
+        bodybytes = messageInfo.getRequest()[bodyoffset:]
+        # 转化成string
+        self._data = self._helpers.bytesToString(bodybytes)
         # 取出path路径
         path = self._url.getPath()
         if self._url.getQuery():
