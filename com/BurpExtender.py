@@ -53,6 +53,24 @@ class BaseFuzzer:
     def reset(self):
         raise NotImplementedError
 
+'''
+1、对json建模，获取json每个key的type类型(string、int、bool、float、path(跨目录)、url（SSRF）)
+2、
+'''
+class JsonType():
+    def findType(self,data):
+        try:
+            valint=int(data)
+            return 'integer'
+        except ValueError:
+            pass
+        try:
+            valfloat=float(data)
+            return 'float'
+        except ValueError:
+            pass
+
+
 class JsonFuzzer(BaseFuzzer):
     def name(self):
         return "JSONFuzzer"
@@ -70,18 +88,17 @@ class JsonFuzzer(BaseFuzzer):
     对用冒号: 分割，每个键值对之间用逗号, 分割，整个字典包括在花括号
     {}
     '''
-    @staticmethod
-    def Segmentation(json_data):
-        segmentats=dict()
-        def _segmentation(object_,key):
-            if isinstance(object_,dict):
-                for object_key in object_:
-                    pass
-            else:
-                segmentats[key]=object_
-        _segmentation(json_data,None)
-        return segmentats
 
+    @staticmethod
+    def replace_jsonkey(json_data, k, v):
+        def _replace_key(data, k, v):
+            if isinstance(data, dict):
+                for key in data:
+                    if key == k:
+                        data[key] = v
+                    elif isinstance(data[key], dict):
+                        _replace_key(data[key], k, v)
+        _replace_key(json_data, k, v)
 
 
     def getMutations(self):
@@ -244,8 +261,15 @@ class deleteLogtable(ActionListener):
                 "ftime":"2019-11-27 22:21:11"}]}
                 '''
                 if re.search(self._extender.JSON_RECONITION_REGEX, log._data):
-                    message = "Json data find {}".format(log._data)
-                    self._extender._stdout.println(message)
+                    #json.loads(log._data)
+                    #直接引入会有bug
+                    self._extender._stdout.println(type(log._data))
+                    #class org.python.core.PyUnicode转化成dict
+                    validjson=json.loads(log._data)
+                    JsonFuzzer.replace_jsonkey(validjson,'mobileTel',"17603030066")
+                    log._data=json.dumps(validjson)
+                    #message = "Json data find {}".format(validjson)
+                    self._extender._stdout.println(log._data)
 
                 self._extender._fuzz.add(log)
                 # 一定要告知fuzzModel更新了
