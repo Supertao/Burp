@@ -1,14 +1,18 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 
+import base64
+import json
+import re
+import string
 import threading
 import time
 import uuid
-import re
-import redis
-import json
+from collections import OrderedDict
 from hashlib import md5
 from threading import Lock
+
+import redis
 from burp import IBurpExtender, ITab, IMessageEditorController, IContextMenuFactory
 from burp import IHttpListener, IScannerCheck, IIntruderPayloadGenerator, IIntruderPayloadGeneratorFactory
 from jarray import array
@@ -53,25 +57,92 @@ class BaseFuzzer:
     def reset(self):
         raise NotImplementedError
 
-'''
-1、对json建模，获取json每个key的type类型(string、int、bool、float、path(跨目录)、url（SSRF）)
-2、
-'''
-class JsonType():
-    def findType(self,data):
+
+class BasicTypeFuzzer:
+    def __init__(self):
+        self.mutations = []
+
+    def reset(self):
+        self.mutations = []
+
+    def name(self):
+        return "BaseType"
+
+    def findType(self, data):
+        if data is None:
+            return 'string'
         try:
-            valint=int(data)
+            val = int(data)
             return 'integer'
         except ValueError:
             pass
         try:
-            valfloat=float(data)
+            val = float(data)
             return 'float'
         except ValueError:
             pass
+        printable = sum([int(x in string.printable) for x in data]) == len(data)
+        if printable:
+            forbidden = ('<', '>', ':', '"', '|', '?', '*')
+            for f in forbidden:
+                if f in data:
+                    return 'string'
+            if data.count('/') <= 1 and data.count('\\') <= 1:
+                return 'string'
+            try:
+                if (len(data) % 4 != 0 or data.endswith('=')) and \
+                        base64.b64encode(base64.b64decode(data)) == data:
+                    return 'string'
+            except:
+                pass
+            regexes = (
+                # windows path
+                r'^(?:[a-zA-Z]:)?\\?[\\\S|*\S]?.*$',
+                # linux path
+                r'^(\/?[^\/]*)+'
+            )
+            for r in regexes:
+                if re.match(r, data, re.I):
+                    return 'path'
+            return 'string'
+        else:
+            return ''
+
+    # 变异算法
+    def getMutations(self, data):
+        payload = ''
+        mutations = []
+        ordered = OrderedDict()
+        varType = self.findType(data)
+        # 如果识别出string，
+        if varType == 'string':
+            payload = "String Fuzz"
+        elif varType == 'integer':
+            payload = 'Integer Fuzz'
+        mutations.append(payload)
+
+        for mut in mutations:
+            ordered[mut] = True
+        '''
+        dic = collections.OrderedDict()
+        dic['k1'] = 'v1'
+        dic['k2'] = 'v2'
+        print(dic.keys())
+
+        # 输出：odict_keys(['k1', 'k2'])
+        '''
+        return ordered.keys()
+
+
+'''
+1、对json建模，获取json每个key的type类型(string、int、bool、float、path(跨目录)、url（SSRF）)
+2、拆分json的key-vaule,对应第一步中的type类型，然后替换相对的payload
+3、根据界面相似度、响应状态码、错误提示等来识别
+'''
 
 
 class JsonFuzzer(BaseFuzzer):
+
     def name(self):
         return "JSONFuzzer"
 
@@ -81,7 +152,15 @@ class JsonFuzzer(BaseFuzzer):
             return True
         except Exception as e:
             return False
-            print("JSON error!",e)
+            print("JSON error!", e)
+
+    @staticmethod
+    def _construct_key(previous_key, separtor, new_key):
+        if previous_key:
+            return "{}{}{}".format(previous_key, separtor, new_key)
+        else:
+            return new_key
+
     '''
     字典的每个键值
     key = > value
@@ -90,19 +169,63 @@ class JsonFuzzer(BaseFuzzer):
     '''
 
     @staticmethod
-    def replace_jsonkey(json_data, k, v):
-        def _replace_key(data, k, v):
-            if isinstance(data, dict):
-                for key in data:
+    def json_key(dict_json):
+        _orderedDict = OrderedDict()
+
+        def _json_key(object_, key):
+            # 判断是否字典类型isinstance 返回True False
+            if isinstance(object_, dict):
+                for object_key in object_:
+                    # 如果dict_json依旧是字典类型
+                    if isinstance(object_[object_key], dict):
+                        _json_key(object_[object_key], object_key)
+                    elif isinstance(object_[object_key], list):
+                        for index, item in enumerate(object_[object_key]):
+                            _orderedDict[index] = item
+                    else:
+                        _orderedDict[object_key] = object_[object_key]
+
+        _json_key(dict_json, None)
+        return _orderedDict
+
+    @staticmethod
+    def replace_jsonkey(dict_json, k, v):
+        def _replace_jsonkey(dic_json, k, v):
+            if isinstance(dic_json, dict):
+                for key in dic_json:
                     if key == k:
-                        data[key] = v
-                    elif isinstance(data[key], dict):
-                        _replace_key(data[key], k, v)
-        _replace_key(json_data, k, v)
+                        dic_json[key] = v
+                    elif isinstance(dic_json[key], dict):
+                        _replace_jsonkey(dic_json[key], k, v)
 
+        _replace_jsonkey(dict_json, k, v)
 
-    def getMutations(self):
-        return
+    def getMutations(self, data):
+        isJson = True
+        mutations = []
+        try:
+            validjson = json.loads(data)
+        except:
+            isJson = False
+        # 如果validjson解析不出来，则跳过
+        if not isJson:
+            return
+
+        json_key = JsonFuzzer.json_key(validjson)
+        fuzzjson = json_key.items()
+        fuzzer = BasicTypeFuzzer()
+        num = 0
+        for key, value in fuzzjson:
+            # 遍历payload
+            for mut in fuzzer.getMutations(value):
+                if data.count(str(value)) == 1:
+                    dataMutated = data.replace(str(value), str(mut))
+                    mutations.append(dataMutated)
+                elif data.count('"' + str(value) + '"') == 1:
+                    dataMutated = data.replace('"' + str(value) + '"', '"' + str(mut) + '"')
+                    mutations.append(dataMutated)
+
+        return list(set(mutations))
 
     def reset(self):
         return
@@ -137,38 +260,42 @@ class actionRunMessage(ActionListener):
 
 # 启动线程来完成请求的发送
 class buildHttp(threading.Thread):
-    def __init__(self, threadid, extender, log):
+    def __init__(self, threadid, extender, log, body):
         threading.Thread.__init__(self)
         self.threadid = threadid
         self._extender = extender
         self._log = log
+        self._body = body
 
     # 执行代码放在run中，线程在创建后会直接运行run函数
     def run(self):
-        req_url = self._log._url
-        host = self._log._host
-        port = self._log._port
-        protocol = self._log._protocol
         method = self._log._method
-        httpService = self._log._httpService
+
         if method == "GET":
-            pass
+            self.FuzzGet()
         elif (method == "POST" or method == "PUT"):
-            pass
+            self.FuzzPost()
+
+    def FuzzGet(self):
+        req_url = self._log._url
+        httpService = self._log._httpService
         request_byte = self._extender._helpers.buildHttpRequest(req_url)
         # self._extender._stdout.println("request:"+self._extender._helpers.bytesToString(request_byte))
         try:
             response = self._extender._callbacks.makeHttpRequest(httpService, request_byte)
             responseInfo = self._extender._helpers.analyzeResponse(response.getResponse())
-            self._extender._stdout.println("repsonse code:" + str(responseInfo.getStatusCode()))
+            self._extender._stdout.println("get code:" + str(responseInfo.getStatusCode()))
         except Exception as e:
             print("BuildHttp error", e)
 
-    def FuzzGet(self):
-        pass
-
     def FuzzPost(self):
-        pass
+        # 获取list<headers> 和body
+        if self._log.headers is None:
+            return
+        body_byte = self._extender._helpers.stringToBytes(self._body)
+        req_resp = self._extender.buildHttpMessage(self._log.headers, body_byte)
+        responseInfo = self._extender._helpers.analyzeResponse(req_resp.getResponse())
+        self._extender._stdout.println("post code:" + str(responseInfo.getStatusCode()))
 
 
 # 删除选中的行,最终要删除列表中的实体
@@ -250,7 +377,7 @@ class deleteLogtable(ActionListener):
             for i in self._row:
                 row = self._extender._fuzz.size()
                 # list添加该intruderfuzz 请求
-                #self._extender._stdout.println("test:" + str(i) + ":row:" + str(row))
+                # self._extender._stdout.println("test:" + str(i) + ":row:" + str(row))
                 log = self._extender._log.get(i)
                 # self._extender._stdout.println(type(i))
                 # 这里开始判断request中是否存在json请求，识别之后再添加list，并插入工具位置，然后再变换payload
@@ -261,26 +388,23 @@ class deleteLogtable(ActionListener):
                 "ftime":"2019-11-27 22:21:11"}]}
                 '''
                 if re.search(self._extender.JSON_RECONITION_REGEX, log._data):
-                    #json.loads(log._data)
-                    #直接引入会有bug
+                    # json.loads(log._data)
+                    # 直接引入会有bug
                     self._extender._stdout.println(type(log._data))
-                    #class org.python.core.PyUnicode转化成dict
-                    validjson=json.loads(log._data)
-                    JsonFuzzer.replace_jsonkey(validjson,'mobileTel',"17603030066")
-                    log._data=json.dumps(validjson)
-                    #message = "Json data find {}".format(validjson)
-                    self._extender._stdout.println(log._data)
+                    # class org.python.core.PyUnicode转化成dict
+                    # 重点Fuzz了
+                    jsonfuzz = JsonFuzzer()
+                    for i, val in enumerate(jsonfuzz.getMutations(log._data)):
+                        try:
+                            self._extender._stdout.println(val)
+                            buildHttp(i, self._extender, log, val).start()
+                        except Exception as e:
+                            print("buildhttp is error!", e)
 
                 self._extender._fuzz.add(log)
                 # 一定要告知fuzzModel更新了
                 self._extender._fuzzModel.fireTableRowsInserted(row, row)
                 # self.mainTab.setSelectedIndex(2)
-                # 重点Fuzz了
-                for i in range(1):
-                    try:
-                        buildHttp(i, self._extender, log).start()
-                    except Exception as e:
-                        print("buildhttp is error!", e)
 
             return
 
@@ -618,11 +742,11 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
         # bug 一定要用len() 代替xx.length
         # JOptionPane.showMessageDialog(None, "Select some param to Fuzz!")
         try:
-            if bounds[0]== bounds[1]:
+            if bounds[0] == bounds[1]:
                 JOptionPane.showMessageDialog(None, "Select some param to Fuzz!")
                 return
         except Exception as e:
-            self._stdout.println("bounds",e)
+            self._stdout.println("bounds", e)
 
         if (selectedMessagess != None and bounds != None and len(bounds) >= 2):
             self._stdout.println("bounds:" + str(len(bounds)))
@@ -890,6 +1014,7 @@ class LogEntry:
             self._status = responseInfo.getStatusCode()
             self._mime = responseInfo.getStatedMimeType()
         requestInfo = self._helpers.analyzeRequest(messageInfo)
+        self.headers = requestInfo.getHeaders()
         self._method = requestInfo.getMethod()
         self._url = requestInfo.getUrl()
         self.content_type = requestInfo.getContentType()
