@@ -116,7 +116,7 @@ class BasicTypeFuzzer:
         varType = self.findType(data)
         # 如果识别出string，
         if varType == 'string':
-            payload = "String Fuzz"
+            payload = "11.11.1.1"
         elif varType == 'integer':
             payload = 'Integer Fuzz'
         mutations.append(payload)
@@ -292,10 +292,17 @@ class buildHttp(threading.Thread):
         # 获取list<headers> 和body
         if self._log.headers is None:
             return
+        self._extender._stdout.println(self._body)
         body_byte = self._extender._helpers.stringToBytes(self._body)
-        req_resp = self._extender.buildHttpMessage(self._log.headers, body_byte)
-        responseInfo = self._extender._helpers.analyzeResponse(req_resp.getResponse())
-        self._extender._stdout.println("post code:" + str(responseInfo.getStatusCode()))
+        try:
+            self._extender._stdout.println("11111")
+            self._extender._stdout.println(self._log.headers)
+            req_resp = self._extender._helpers.buildHttpMessage(self._log.headers, body_byte)
+            self._extender._stdout.println("222222")
+            self._extender._stdout.println(self._extender._helpers.bytesToString(req_resp))
+            self._extender._stdout.println("333333")
+        except Exception as e:
+            print("HTTP POST error!", e)
 
 
 # 删除选中的行,最终要删除列表中的实体
@@ -396,8 +403,8 @@ class deleteLogtable(ActionListener):
                     jsonfuzz = JsonFuzzer()
                     for i, val in enumerate(jsonfuzz.getMutations(log._data)):
                         try:
-                            self._extender._stdout.println(val)
                             buildHttp(i, self._extender, log, val).start()
+                            # self._extender._stdout.println(val)
                         except Exception as e:
                             print("buildhttp is error!", e)
 
