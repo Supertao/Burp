@@ -278,13 +278,11 @@ class buildHttp(threading.Thread):
 
     def FuzzGet(self):
         req_url = self._log._url
-        httpService = self._log._httpService
         request_byte = self._extender._helpers.buildHttpRequest(req_url)
         # self._extender._stdout.println("request:"+self._extender._helpers.bytesToString(request_byte))
         try:
-            response = self._extender._callbacks.makeHttpRequest(httpService, request_byte)
-            responseInfo = self._extender._helpers.analyzeResponse(response.getResponse())
-            self._extender._stdout.println("get code:" + str(responseInfo.getStatusCode()))
+            statusCode = self.makeHttp(request_byte)
+            self._extender._stdout.println("Get code:" + str(statusCode))
         except Exception as e:
             print("BuildHttp error", e)
 
@@ -292,17 +290,22 @@ class buildHttp(threading.Thread):
         # 获取list<headers> 和body
         if self._log.headers is None:
             return
-        self._extender._stdout.println(self._body)
+        # self._extender._stdout.println(self._body)
         body_byte = self._extender._helpers.stringToBytes(self._body)
         try:
-            self._extender._stdout.println("11111")
-            self._extender._stdout.println(self._log.headers)
-            req_resp = self._extender._helpers.buildHttpMessage(self._log.headers, body_byte)
-            self._extender._stdout.println("222222")
-            self._extender._stdout.println(self._extender._helpers.bytesToString(req_resp))
-            self._extender._stdout.println("333333")
+            # self._extender._stdout.println(self._log.headers)
+            req = self._extender._helpers.buildHttpMessage(self._log.headers, body_byte)
+            statusCode = self.makeHttp(req)
+            self._extender._stdout.println("Post code:" + str(statusCode))
         except Exception as e:
             print("HTTP POST error!", e)
+
+    def makeHttp(self, request):
+        httpService = self._log._httpService
+        response = self._extender._callbacks.makeHttpRequest(httpService, request)
+        responseInfo = self._extender._helpers.analyzeResponse(response.getResponse())
+        statusCode = responseInfo.getStatusCode()
+        return statusCode
 
 
 # 删除选中的行,最终要删除列表中的实体
@@ -324,11 +327,16 @@ class deleteLogtable(ActionListener):
         if buttonName == "Remove Selected":
             if self._row == -1:
                 return
+            self._row.reverse()
             for i in self._row:
-                self._extender._stdout.println("remove:" + str(i))
+                #self._extender._stdout.println("remove:" + str(i))
                 self._logx.remove(i)
                 # 一定要通知数据模型更新数据
                 self._model.fireTableDataChanged()
+                messages = "logx {},fuzz {},log {},row {}".format(self._logx.size(), self._extender._fuzz.size(),
+                                                                  self._extender._log.size(), i)
+                self._extender._stdout.println(messages)
+
             # JOptionPane.showMessageDialog(None, "Remove Successfully!")
         # 一定要有二次点击确定,防止误删除
         if buttonName == "Clear All Histroy":
@@ -338,7 +346,7 @@ class deleteLogtable(ActionListener):
             isSure = JOptionPane.showMessageDialog(None, "Are you Sure to Clear All Histroy?",
                                                    "Sure",
                                                    JOptionPane.YES_NO_CANCEL_OPTION)
-            self._extender._stdout.println("xxx:" + str(isSure))
+            #self._extender._stdout.println("xxx:" + str(isSure))
             # JOptionPane.YES_OPTION 0
             # 此处有bug,目前无法获取到isSure的正确值
             if isSure == None:
@@ -380,7 +388,6 @@ class deleteLogtable(ActionListener):
             self._extender._stdout.println(buttonName)
             if self._row == -1:
                 return
-
             for i in self._row:
                 row = self._extender._fuzz.size()
                 # list添加该intruderfuzz 请求
@@ -397,14 +404,14 @@ class deleteLogtable(ActionListener):
                 if re.search(self._extender.JSON_RECONITION_REGEX, log._data):
                     # json.loads(log._data)
                     # 直接引入会有bug
-                    self._extender._stdout.println(type(log._data))
+                    #self._extender._stdout.println(type(log._data))
                     # class org.python.core.PyUnicode转化成dict
                     # 重点Fuzz了
                     jsonfuzz = JsonFuzzer()
                     for i, val in enumerate(jsonfuzz.getMutations(log._data)):
                         try:
                             buildHttp(i, self._extender, log, val).start()
-                            # self._extender._stdout.println(val)
+                            self._extender._stdout.println(val)
                         except Exception as e:
                             print("buildhttp is error!", e)
 
@@ -451,7 +458,7 @@ class popmenuListener(MouseAdapter):
             mpopMenu.add(copyMenu)
             # 通过点击位置找到点击为表格中的行
             self._extender._focusedRow = self._table.getSelectedRows();
-            self._extender._stdout.println(self._extender._focusedRow)
+            #self._extender._stdout.println(self._extender._focusedRow)
             # 一定要为按钮添加点击事件
             deleteMenu.addActionListener(deleteLogtable(self._extender, self._extender._focusedRow, self._sign))
             clearMenu.addActionListener(deleteLogtable(self._extender, self._extender._focusedRow, self._sign))
@@ -777,7 +784,7 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
         if toolFlag == 4 or toolFlag == 32 or toolFlag == 16 or toolFlag == 64 or toolFlag == 1024:
             # 既有响应又有请求，很重要(不然会出现很大的bug)
             if not messageIsRequest:
-                self._stdout.println("Enter print request")
+                #self._stdout.println("Enter print request")
                 try:
                     # 使用requestinfo我们可以轻松的获得body和headers
                     requestInfo = self._helpers.analyzeRequest(messageInfo)
@@ -806,9 +813,9 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
                     # 给每个请求单独加一个fuzzid来做标识,目前未使用
                     uid = str(uuid.uuid4())
                     fuzzid = ''.join(uid.split('-'))
-                    self._stdout.println("Url:" + str(url) + "\n" + "".join(newHeaders) + "\n" + bodyStrings)
+                    #self._stdout.println("Url:" + str(url) + "\n" + "".join(newHeaders) + "\n" + bodyStrings)
                     try:
-                        if toolFlag == 16:
+                        if toolFlag == 16 or toolFlag == 1024:
                             self._lock.acquire()
                             row_fuzz = self._fuzz.size()
                             self._fuzz.add(LogEntry(toolFlag, messageInfo, self._helpers, self._callbacks))
