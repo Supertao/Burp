@@ -1,6 +1,5 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
-
 import base64
 import json
 import re
@@ -329,7 +328,7 @@ class deleteLogtable(ActionListener):
                 return
             self._row.reverse()
             for i in self._row:
-                #self._extender._stdout.println("remove:" + str(i))
+                # self._extender._stdout.println("remove:" + str(i))
                 self._logx.remove(i)
                 # 一定要通知数据模型更新数据
                 self._model.fireTableDataChanged()
@@ -346,7 +345,7 @@ class deleteLogtable(ActionListener):
             isSure = JOptionPane.showMessageDialog(None, "Are you Sure to Clear All Histroy?",
                                                    "Sure",
                                                    JOptionPane.YES_NO_CANCEL_OPTION)
-            #self._extender._stdout.println("xxx:" + str(isSure))
+            # self._extender._stdout.println("xxx:" + str(isSure))
             # JOptionPane.YES_OPTION 0
             # 此处有bug,目前无法获取到isSure的正确值
             if isSure == None:
@@ -404,7 +403,7 @@ class deleteLogtable(ActionListener):
                 if re.search(self._extender.JSON_RECONITION_REGEX, log._data):
                     # json.loads(log._data)
                     # 直接引入会有bug
-                    #self._extender._stdout.println(type(log._data))
+                    # self._extender._stdout.println(type(log._data))
                     # class org.python.core.PyUnicode转化成dict
                     # 重点Fuzz了
                     jsonfuzz = JsonFuzzer()
@@ -458,7 +457,7 @@ class popmenuListener(MouseAdapter):
             mpopMenu.add(copyMenu)
             # 通过点击位置找到点击为表格中的行
             self._extender._focusedRow = self._table.getSelectedRows();
-            #self._extender._stdout.println(self._extender._focusedRow)
+            # self._extender._stdout.println(self._extender._focusedRow)
             # 一定要为按钮添加点击事件
             deleteMenu.addActionListener(deleteLogtable(self._extender, self._extender._focusedRow, self._sign))
             clearMenu.addActionListener(deleteLogtable(self._extender, self._extender._focusedRow, self._sign))
@@ -636,11 +635,11 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
         '''
         requestEditor = FuzzEditor(self)
         responseEditor = FuzzEditor(self)
-        self._requestView = callbacks.createMessageEditor(requestEditor, False)
-        self._responseView = callbacks.createMessageEditor(responseEditor, False)
+        self.requestView = callbacks.createMessageEditor(requestEditor, False)
+        self.responseView = callbacks.createMessageEditor(responseEditor, False)
         # 界面由tabs选项卡改为两开界面(11.26)
-        requestPanel.add(self._requestView.getComponent())
-        responsePanel.add(self._responseView.getComponent())
+        requestPanel.add(self.requestView.getComponent())
+        responsePanel.add(self.responseView.getComponent())
         requestResponseView.setLeftComponent(requestPanel)
         requestResponseView.setRightComponent(responsePanel)
         splitpane.setRightComponent(requestResponseView)
@@ -670,6 +669,28 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
         fuzzscrollPane = JScrollPane(self.fuzzTable, ScrollPaneConstants.VERTICAL_SCROLLBAR_ALWAYS,
                                      ScrollPaneConstants.HORIZONTAL_SCROLLBAR_AS_NEEDED)
         fuzzsplitpane.setLeftComponent(fuzzscrollPane)
+
+        # 4.下面组件为request|response显示区域
+        req_respFuzzView = JSplitPane(JSplitPane.HORIZONTAL_SPLIT)
+        req_respFuzzView.setResizeWeight(0.5)
+        requestFuzzPanel = JPanel()
+        requestFuzzPanel.setLayout(BorderLayout())
+        responseFuzzPanel = JPanel()
+        responseFuzzPanel.setLayout(BorderLayout())
+        '''
+         IMessageEditor createMessageEditor(IMessageEditorController contrpoller,
+            boolean editable);
+        '''
+        requestFuzzEditor = FuzzEditor(self)
+        responseFuzzEditor = FuzzEditor(self)
+        self.requestFuzzView = callbacks.createMessageEditor(requestFuzzEditor, False)
+        self.responseFuzzView = callbacks.createMessageEditor(responseFuzzEditor, False)
+        # 界面由tabs选项卡改为两开界面(11.26)
+        requestFuzzPanel.add(self.requestFuzzView.getComponent())
+        responseFuzzPanel.add(self.responseFuzzView.getComponent())
+        req_respFuzzView.setLeftComponent(requestFuzzPanel)
+        req_respFuzzView.setRightComponent(responseFuzzPanel)
+        fuzzsplitpane.setRightComponent(req_respFuzzView)
 
         # 初始化读取payload文件
         self.PAYLOADSS = []
@@ -784,7 +805,7 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
         if toolFlag == 4 or toolFlag == 32 or toolFlag == 16 or toolFlag == 64 or toolFlag == 1024:
             # 既有响应又有请求，很重要(不然会出现很大的bug)
             if not messageIsRequest:
-                #self._stdout.println("Enter print request")
+                # self._stdout.println("Enter print request")
                 try:
                     # 使用requestinfo我们可以轻松的获得body和headers
                     requestInfo = self._helpers.analyzeRequest(messageInfo)
@@ -813,7 +834,7 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
                     # 给每个请求单独加一个fuzzid来做标识,目前未使用
                     uid = str(uuid.uuid4())
                     fuzzid = ''.join(uid.split('-'))
-                    #self._stdout.println("Url:" + str(url) + "\n" + "".join(newHeaders) + "\n" + bodyStrings)
+                    # self._stdout.println("Url:" + str(url) + "\n" + "".join(newHeaders) + "\n" + bodyStrings)
                     try:
                         if toolFlag == 16 or toolFlag == 1024:
                             self._lock.acquire()
@@ -977,10 +998,15 @@ class TableModel(DefaultTableModel):
 class LogJTable(JTable):
     def __init__(self, extender, model, sign):
         self._extender = extender
-        if sign == "fuzz":
-            self._logx = self._extender._fuzz
-        elif sign == "main":
+        # 代码复用Fuzz Main
+        if sign == "main":
             self._logx = self._extender._log
+            self.reqView = self._extender.requestView
+            self.responseView = self._extender.responseView
+        elif sign == "fuzz":
+            self._logx = self._extender._fuzz
+            self.reqView = self._extender.requestFuzzView
+            self.responseView = self._extender.responseFuzzView
         self.setModel(model)
 
     # 解决界面上请求和响应被选中时实时更新
@@ -989,13 +1015,13 @@ class LogJTable(JTable):
             # 获取选中的行的详细请求内容
             logEntity = self._logx.get(row)
             # void setMessage(byte[] message, boolean isRequest);
-
-            self._extender._requestView.setMessage(logEntity._requestResponse.getRequest(), True)
+            # bug 两个选项卡复用
+            self.reqView.setMessage(logEntity._requestResponse.getRequest(), True)
             # 一直都是空，原因就是processHttpMessage去构造请求了
             # self._extender._stdout.println("test1:" + str(logEntity._requestResponse.getResponse()))
             try:
 
-                self._extender._responseView.setMessage(logEntity._requestResponse.getResponse(), False)
+                self.responseView.setMessage(logEntity._requestResponse.getResponse(), False)
                 # 这里要判断下请求的响应是否存在，因为有请求不一定有响应
                 '''
                  if(logEntity._requestResponse.getResponse()):
@@ -1009,7 +1035,6 @@ class LogJTable(JTable):
             self._extender.currentLogEntry = logEntity._requestResponse
         except Exception as e:
             print("jtable error", e)
-
         JTable.changeSelection(self, row, column, toggle, extend)
 
 
