@@ -312,6 +312,7 @@ class deleteLogtable(ActionListener):
     def __init__(self, extender, row, sign):
         self._extender = extender
         self._row = row
+        self.sign = sign
         if sign == "fuzz":
             self._logx = self._extender._fuzz
             self._model = self._extender._fuzzModel
@@ -319,7 +320,18 @@ class deleteLogtable(ActionListener):
             self._logx = self._extender._log
             self._model = self._extender._dataModel
 
+    def clearMessage(self,requestView,responseView):
+        requestView.setMessage(" ", True)
+        # 一直都是空，原因就是processHttpMessage去构造请求了
+        responseView.setMessage(" ", False)
+
     def actionPerformed(self, evt):
+        if self.sign == "main":
+            self.reqView = self._extender.requestView
+            self.respView = self._extender.responseView
+        elif self.sign == "fuzz":
+            self.reqView = self._extender.requestFuzzView
+            self.respView = self._extender.responseFuzzView
         # 通过获取按钮的内容来做相对的响应（https://www.cnblogs.com/dengyungao/p/7525013.html）
         buttonName = evt.getActionCommand()
         self._extender._stdout.println(buttonName)
@@ -336,6 +348,9 @@ class deleteLogtable(ActionListener):
                                                                   self._extender._log.size(), i)
                 self._extender._stdout.println(messages)
 
+            if self._row.length() == 0:
+                self.clearMessage(self.reqView, self.respView)
+
             # JOptionPane.showMessageDialog(None, "Remove Successfully!")
         # 一定要有二次点击确定,防止误删除
         if buttonName == "Clear All Histroy":
@@ -349,7 +364,8 @@ class deleteLogtable(ActionListener):
             # JOptionPane.YES_OPTION 0
             # 此处有bug,目前无法获取到isSure的正确值
             if isSure == None:
-                self._extender._log.clear()
+                self._logx.clear()
+                self.clearMessage(self.reqView, self.respView)
                 self._extender._stdout.println("clear all history" + str(self._extender._log.size()))
                 # 一定要通知数据模型更新数据
                 self._model.fireTableDataChanged()
@@ -999,19 +1015,20 @@ class LogJTable(JTable):
     def __init__(self, extender, model, sign):
         self._extender = extender
         # 代码复用Fuzz Main
-        if sign == "main":
-            self._logx = self._extender._log
-            self.reqView = self._extender.requestView
-            self.responseView = self._extender.responseView
-        elif sign == "fuzz":
-            self._logx = self._extender._fuzz
-            self.reqView = self._extender.requestFuzzView
-            self.responseView = self._extender.responseFuzzView
+        self.sign = sign
         self.setModel(model)
 
     # 解决界面上请求和响应被选中时实时更新
     def changeSelection(self, row, column, toggle, extend):
         try:
+            if self.sign == "main":
+                self._logx = self._extender._log
+                self.reqView = self._extender.requestView
+                self.respView = self._extender.responseView
+            elif self.sign == "fuzz":
+                self._logx = self._extender._fuzz
+                self.reqView = self._extender.requestFuzzView
+                self.respView = self._extender.responseFuzzView
             # 获取选中的行的详细请求内容
             logEntity = self._logx.get(row)
             # void setMessage(byte[] message, boolean isRequest);
@@ -1021,7 +1038,7 @@ class LogJTable(JTable):
             # self._extender._stdout.println("test1:" + str(logEntity._requestResponse.getResponse()))
             try:
 
-                self.responseView.setMessage(logEntity._requestResponse.getResponse(), False)
+                self.respView.setMessage(logEntity._requestResponse.getResponse(), False)
                 # 这里要判断下请求的响应是否存在，因为有请求不一定有响应
                 '''
                  if(logEntity._requestResponse.getResponse()):
