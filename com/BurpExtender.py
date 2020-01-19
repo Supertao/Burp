@@ -10,7 +10,6 @@ import uuid
 from collections import OrderedDict
 from hashlib import md5
 from threading import Lock
-
 import redis
 from burp import IBurpExtender, ITab, IMessageEditorController, IContextMenuFactory
 from burp import IHttpListener, IScannerCheck, IIntruderPayloadGenerator, IIntruderPayloadGeneratorFactory
@@ -115,7 +114,7 @@ class BasicTypeFuzzer:
         varType = self.findType(data)
         # 如果识别出string，
         if varType == 'string':
-            payload = "11.11.1.1"
+            payload = "String Fuzz"
         elif varType == 'integer':
             payload = 'Integer Fuzz'
         mutations.append(payload)
@@ -131,6 +130,9 @@ class BasicTypeFuzzer:
         # 输出：odict_keys(['k1', 'k2'])
         '''
         return ordered.keys()
+
+    def stringMutations(self):
+        pass
 
 
 '''
@@ -369,7 +371,7 @@ class deleteLogtable(ActionListener):
             if isSure == None:
                 self._logx.clear()
                 self.clearMessage(self.reqView, self.respView)
-                self._extender._stdout.println("clear all history" + str(self._extender._log.size()))
+                self._extender._stdout.println("clear all history:" + str(self._extender._log.size()))
                 # 一定要通知数据模型更新数据
                 self._model.fireTableDataChanged()
 
