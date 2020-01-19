@@ -348,7 +348,10 @@ class deleteLogtable(ActionListener):
                                                                   self._extender._log.size(), i)
                 self._extender._stdout.println(messages)
 
-            if self._row.length() == 0:
+            self._extender._stdout.println(type(self._row))
+            self._extender._stdout.println(self._row)
+            #千万不要写_row
+            if self._logx.size() == 0:
                 self.clearMessage(self.reqView, self.respView)
 
             # JOptionPane.showMessageDialog(None, "Remove Successfully!")
