@@ -10,6 +10,7 @@ import uuid
 from collections import OrderedDict
 from hashlib import md5
 from threading import Lock
+
 import redis
 from burp import IBurpExtender, ITab, IMessageEditorController, IContextMenuFactory
 from burp import IHttpListener, IScannerCheck, IIntruderPayloadGenerator, IIntruderPayloadGeneratorFactory
@@ -39,6 +40,17 @@ from javax.swing import JTextField
 from javax.swing import ScrollPaneConstants
 from javax.swing.table import DefaultTableModel
 from javax.swing.table import TableCellRenderer, DefaultTableCellRenderer
+
+
+class Payload():
+    def generator(self):
+        PAYLOADS = []
+        with open('Fuzzing.pay', 'r') as payload:
+            line = payload.readline()
+            while line != '':
+                PAYLOADS.append(line.strip('\n'))
+                line = payload.readline()
+        return PAYLOADS
 
 
 # 定义一个基本的Fuzzer类
@@ -114,10 +126,10 @@ class BasicTypeFuzzer:
         varType = self.findType(data)
         # 如果识别出string，
         if varType == 'string':
-            payload = "String Fuzz"
+            mutations = self.stringMutations(mutations)
         elif varType == 'integer':
             payload = 'Integer Fuzz'
-        mutations.append(payload)
+            mutations.append(payload)
 
         for mut in mutations:
             ordered[mut] = True
@@ -131,8 +143,14 @@ class BasicTypeFuzzer:
         '''
         return ordered.keys()
 
-    def stringMutations(self):
-        pass
+    def stringMutations(self, mutations):
+        p = Payload()
+        for i in p.generator():
+            i = json.dumps(i)
+            print(i)
+            mutations.append(i)
+
+        return mutations
 
 
 '''
@@ -220,7 +238,7 @@ class JsonFuzzer(BaseFuzzer):
             # 遍历payload
             for mut in fuzzer.getMutations(value):
                 if data.count(str(value)) == 1:
-                    dataMutated = data.replace(str(value), str(mut))
+                    dataMutated = data.replace('"' + str(value) + '"', str(mut))
                     mutations.append(dataMutated)
                 elif data.count('"' + str(value) + '"') == 1:
                     dataMutated = data.replace('"' + str(value) + '"', '"' + str(mut) + '"')
@@ -304,8 +322,12 @@ class buildHttp(threading.Thread):
     def makeHttp(self, request):
         httpService = self._log._httpService
         response = self._extender._callbacks.makeHttpRequest(httpService, request)
-        responseInfo = self._extender._helpers.analyzeResponse(response.getResponse())
-        statusCode = responseInfo.getStatusCode()
+        resp=response.getResponse()
+        if resp:
+            responseInfo = self._extender._helpers.analyzeResponse(resp)
+            statusCode = responseInfo.getStatusCode()
+        else:
+            statusCode=500
         return statusCode
 
 
@@ -322,7 +344,7 @@ class deleteLogtable(ActionListener):
             self._logx = self._extender._log
             self._model = self._extender._dataModel
 
-    def clearMessage(self,requestView,responseView):
+    def clearMessage(self, requestView, responseView):
         requestView.setMessage(" ", True)
         # 一直都是空，原因就是processHttpMessage去构造请求了
         responseView.setMessage(" ", False)
@@ -352,7 +374,7 @@ class deleteLogtable(ActionListener):
 
             self._extender._stdout.println(type(self._row))
             self._extender._stdout.println(self._row)
-            #千万不要写_row
+            # 千万不要写_row
             if self._logx.size() == 0:
                 self.clearMessage(self.reqView, self.respView)
 
@@ -411,9 +433,9 @@ class deleteLogtable(ActionListener):
             for i in self._row:
                 row = self._extender._fuzz.size()
                 # list添加该intruderfuzz 请求
-                # self._extender._stdout.println("test:" + str(i) + ":row:" + str(row))
+                #self._extender._stdout.println("test:" + str(i) + ":row:" + str(row))
                 log = self._extender._log.get(i)
-                # self._extender._stdout.println(type(i))
+                self._extender._stdout.println(log._data)
                 # 这里开始判断request中是否存在json请求，识别之后再添加list，并插入工具位置，然后再变换payload
                 '''
                 {"message":"ok","nu":"11111111111","ischeck":"1","com":"yuantong",
@@ -427,9 +449,11 @@ class deleteLogtable(ActionListener):
                     # self._extender._stdout.println(type(log._data))
                     # class org.python.core.PyUnicode转化成dict
                     # 重点Fuzz了
+                    self._extender._stdout.println(log._data)
                     jsonfuzz = JsonFuzzer()
                     for i, val in enumerate(jsonfuzz.getMutations(log._data)):
                         try:
+                            self._extender._stdout.println("Test")
                             buildHttp(i, self._extender, log, val).start()
                             self._extender._stdout.println(val)
                         except Exception as e:
@@ -799,10 +823,10 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
         # JOptionPane.showMessageDialog(None, "Select some param to Fuzz!")
         try:
             if bounds[0] == bounds[1]:
-                JOptionPane.showMessageDialog(None, "Select some param to Fuzz!")
+                #JOptionPane.showMessageDialog(None, "Select some param to Fuzz!")
                 return
         except Exception as e:
-            self._stdout.println("bounds", e)
+            print("bounds", e)
 
         if (selectedMessagess != None and bounds != None and len(bounds) >= 2):
             self._stdout.println("bounds:" + str(len(bounds)))
