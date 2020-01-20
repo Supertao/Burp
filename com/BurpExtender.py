@@ -453,7 +453,6 @@ class deleteLogtable(ActionListener):
                     jsonfuzz = JsonFuzzer()
                     for i, val in enumerate(jsonfuzz.getMutations(log._data)):
                         try:
-                            self._extender._stdout.println("Test")
                             buildHttp(i, self._extender, log, val).start()
                             self._extender._stdout.println(val)
                         except Exception as e:
