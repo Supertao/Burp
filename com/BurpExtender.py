@@ -322,12 +322,12 @@ class buildHttp(threading.Thread):
     def makeHttp(self, request):
         httpService = self._log._httpService
         response = self._extender._callbacks.makeHttpRequest(httpService, request)
-        resp=response.getResponse()
+        resp = response.getResponse()
         if resp:
             responseInfo = self._extender._helpers.analyzeResponse(resp)
             statusCode = responseInfo.getStatusCode()
         else:
-            statusCode=500
+            statusCode = 500
         return statusCode
 
 
@@ -433,7 +433,7 @@ class deleteLogtable(ActionListener):
             for i in self._row:
                 row = self._extender._fuzz.size()
                 # list添加该intruderfuzz 请求
-                #self._extender._stdout.println("test:" + str(i) + ":row:" + str(row))
+                # self._extender._stdout.println("test:" + str(i) + ":row:" + str(row))
                 log = self._extender._log.get(i)
                 self._extender._stdout.println(log._data)
                 # 这里开始判断request中是否存在json请求，识别之后再添加list，并插入工具位置，然后再变换payload
@@ -659,7 +659,7 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
         for i in range(self.logTable.getColumnCount()):
             # python
             tablecolumn = self.logTable.getColumnModel().getColumn(i)
-            tablecolumn.setPreferredWidth(self._dataModel.getCloumnWidth(i))
+            tablecolumn.setPreferredWidth(self._dataModel.getColumnWidth(i))
         # 设置下水平滚动，垂直滚动ScrollPaneConstants.HORIZONTAL_SCROLLBAR_AS_NEEDED,ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED
         logscrollPane = JScrollPane(self.logTable, ScrollPaneConstants.VERTICAL_SCROLLBAR_ALWAYS,
                                     ScrollPaneConstants.HORIZONTAL_SCROLLBAR_AS_NEEDED)
@@ -691,11 +691,11 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
 
         # 4.定义Fuzz记录组件
         fuzzsplitpane = JSplitPane(JSplitPane.VERTICAL_SPLIT)  # 垂直分布
-        self._fuzzModel = TableModel(self, self._fuzz)
+        self._fuzzModel = TableFuzzModel(self, self._fuzz)
         self.fuzzTable = LogJTable(self, self._fuzzModel, self._fuzzName)
         # 添加渲染器
         try:
-            cloumnrenderer = self.fuzzTable.getColumnModel().getColumn(5)
+            cloumnrenderer = self.fuzzTable.getColumnModel().getColumn(4)
             tcr = FuzzTableCellRenderer(self)
             cloumnrenderer.setCellRenderer(tcr)
         except Exception as e:
@@ -705,7 +705,7 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
         for i in range(self.fuzzTable.getColumnCount()):
             # python
             tablecolumn2 = self.fuzzTable.getColumnModel().getColumn(i)
-            tablecolumn2.setPreferredWidth(self._fuzzModel.getCloumnWidth(i))
+            tablecolumn2.setPreferredWidth(self._fuzzModel.getColumnWidth(i))
         # 绑定点击事件
         self.fuzzTable.addMouseListener(popmenuListener(self, self._fuzzName))
 
@@ -822,7 +822,7 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
         # JOptionPane.showMessageDialog(None, "Select some param to Fuzz!")
         try:
             if bounds[0] == bounds[1]:
-                #JOptionPane.showMessageDialog(None, "Select some param to Fuzz!")
+                # JOptionPane.showMessageDialog(None, "Select some param to Fuzz!")
                 return
         except Exception as e:
             print("bounds", e)
@@ -956,13 +956,80 @@ class FuzzTableCellRenderer(TableCellRenderer):
         return self.default_renderer
 
 
+class TableFuzzModel(DefaultTableModel):
+    def __init__(self, extender, log):
+        self._extender = extender
+        self._logx = log
+
+    # # Host URL PAYLOAD Status Length SSL
+    def getColumnWidth(self, columnIndex):
+        if columnIndex == 1:
+            return 120
+        if columnIndex == 2:
+            return 200
+        if columnIndex == 3:
+            return 380
+        return 60
+
+    def getColumnCount(self):
+        return 7
+
+    def getRowCount(self):
+        return self._logx.size()
+
+    def getColumnClass(self, columnIndex):
+        if columnIndex == 6:
+            return Boolean
+        return str
+
+    def isCellEditable(self, row, columnIndex):
+        return False
+
+    # 设置Fuzz表头
+    def getColumnName(self, columnIndex):
+        # {# Host URL PAYLOAD Status Length SSL}
+        if columnIndex == 0:
+            return "#"
+        if columnIndex == 1:
+            return "Host"
+        if columnIndex == 2:
+            return "Url"
+        if columnIndex == 3:
+            return "PAYLOAD"
+        if columnIndex == 4:
+            return "Status"
+        if columnIndex == 5:
+            return "Length"
+        if columnIndex == 6:
+            return "SSL"
+        return ""
+
+    def getValueAt(self, row, columnIndex):
+        logEntry = self._logx.get(row)
+        if columnIndex == 0:
+            return logEntry._id
+        if columnIndex == 1:
+            return logEntry._host
+        if columnIndex == 2:
+            return logEntry._queryPath
+        if columnIndex == 3:
+            return "PAYLOAD"
+        if columnIndex == 4:
+            return logEntry._status
+        if columnIndex == 5:
+            return "Length"
+        if columnIndex == 6:
+            return logEntry._protocol
+        return ""
+
+
 # https://docs.oracle.com/javase/7/docs/api/javax/swing/JTable.html
 class TableModel(DefaultTableModel):
     def __init__(self, extender, log):
         self._extender = extender
         self._logx = log
 
-    def getCloumnWidth(self, columnIndex):
+    def getColumnWidth(self, columnIndex):
         if columnIndex == 1:
             return 120
         if columnIndex == 4:
@@ -1014,7 +1081,7 @@ class TableModel(DefaultTableModel):
     def getValueAt(self, row, columnIndex):
         logEntry = self._logx.get(row)
         if columnIndex == 0:
-            return "#"
+            return logEntry._id
         if columnIndex == 1:
             return logEntry._host
         if columnIndex == 2:
@@ -1026,7 +1093,7 @@ class TableModel(DefaultTableModel):
         if columnIndex == 5:
             return logEntry._status
         if columnIndex == 6:
-            return "Length"
+            return "Length<img>"
         if columnIndex == 7:
             return logEntry._mime
         if columnIndex == 8:
@@ -1087,12 +1154,13 @@ class LogJTable(JTable):
 # __init__魔术方法，只是将传入的参数来初始化该实例
 # __new__用来创建类并返回这个类的实例
 class LogEntry:
+
     def __init__(self, toolFlag, messageInfo, helpers, callbacks):
         self._callbacks = callbacks
         self._helpers = helpers
         self._toolFlag = toolFlag
         self._requestResponse = self._callbacks.saveBuffersToTempFiles(messageInfo)
-
+        self._id = 1
         if self._requestResponse.getResponse():
             responseInfo = self._helpers.analyzeResponse(self._requestResponse.getResponse())
             self._status = responseInfo.getStatusCode()
