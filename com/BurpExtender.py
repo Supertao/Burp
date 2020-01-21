@@ -10,7 +10,6 @@ import uuid
 from collections import OrderedDict
 from hashlib import md5
 from threading import Lock
-
 import redis
 from burp import IBurpExtender, ITab, IMessageEditorController, IContextMenuFactory
 from burp import IHttpListener, IScannerCheck, IIntruderPayloadGenerator, IIntruderPayloadGeneratorFactory
@@ -451,8 +450,11 @@ class deleteLogtable(ActionListener):
                     # 重点Fuzz了
                     self._extender._stdout.println(log._data)
                     jsonfuzz = JsonFuzzer()
+                    #payloads_list=jsonfuzz.getMutations(log._data)
                     for i, val in enumerate(jsonfuzz.getMutations(log._data)):
                         try:
+                            #目前这个方案只能是临时替代，该方案在请求出现异常，会出现不稳定
+                            #log.fuzzpayload=payloads_list[i]
                             buildHttp(i, self._extender, log, val).start()
                             self._extender._stdout.println(val)
                         except Exception as e:
@@ -524,7 +526,7 @@ class WebFuzz(IIntruderPayloadGenerator):
         # self._extender._stdout.println(corups)
         self.PAYLOADS = []
         for line in self.PAYLOADSS:
-            self._extender._stdout.println(line)
+            #self._extender._stdout.println(line)
             self.PAYLOADS.append(bytearray(line))
         # self._extender._stdout.println(len(self.PAYLOADSS))
 
@@ -1013,7 +1015,7 @@ class TableFuzzModel(DefaultTableModel):
         if columnIndex == 2:
             return logEntry._queryPath
         if columnIndex == 3:
-            return "PAYLOAD"
+            return logEntry.fuzzpayload
         if columnIndex == 4:
             return logEntry._status
         if columnIndex == 5:
@@ -1189,6 +1191,8 @@ class LogEntry:
             self._protocol = True
         else:
             self._protocol = False
+        #预制为空，只要做了fuzz,才会有
+        self.fuzzpayload=""
 
 
 class FuzzEditor(IMessageEditorController):
