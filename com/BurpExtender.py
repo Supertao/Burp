@@ -10,6 +10,7 @@ import uuid
 from collections import OrderedDict
 from hashlib import md5
 from threading import Lock
+
 import redis
 from burp import IBurpExtender, ITab, IMessageEditorController, IContextMenuFactory
 from burp import IHttpListener, IScannerCheck, IIntruderPayloadGenerator, IIntruderPayloadGeneratorFactory
@@ -119,7 +120,6 @@ class BasicTypeFuzzer:
 
     # 变异算法
     def getMutations(self, data):
-        payload = ''
         mutations = []
         ordered = OrderedDict()
         varType = self.findType(data)
@@ -146,7 +146,7 @@ class BasicTypeFuzzer:
         p = Payload()
         for i in p.generator():
             i = json.dumps(i)
-            print(i)
+            # print(i)
             mutations.append(i)
 
         return mutations
@@ -160,7 +160,6 @@ class BasicTypeFuzzer:
 
 
 class JsonFuzzer(BaseFuzzer):
-
     def name(self):
         return "JSONFuzzer"
 
@@ -220,7 +219,7 @@ class JsonFuzzer(BaseFuzzer):
 
     def getMutations(self, data):
         isJson = True
-        mutations = []
+        mutations = {}
         try:
             validjson = json.loads(data)
         except:
@@ -229,21 +228,22 @@ class JsonFuzzer(BaseFuzzer):
         if not isJson:
             return
 
-        json_key = JsonFuzzer.json_key(validjson)
-        fuzzjson = json_key.items()
+        fuzzjson = JsonFuzzer.json_key(validjson).items()
         fuzzer = BasicTypeFuzzer()
         num = 0
-        for key, value in fuzzjson:
+        for k, value in fuzzjson:
             # 遍历payload
             for mut in fuzzer.getMutations(value):
+                key = str(k) + str(mut)
                 if data.count(str(value)) == 1:
                     dataMutated = data.replace('"' + str(value) + '"', str(mut))
-                    mutations.append(dataMutated)
+                    # mutations.append(dataMutated)
+                    mutations[key] = dataMutated
                 elif data.count('"' + str(value) + '"') == 1:
                     dataMutated = data.replace('"' + str(value) + '"', '"' + str(mut) + '"')
-                    mutations.append(dataMutated)
+                    mutations[key] = dataMutated
 
-        return list(set(mutations))
+        return mutations
 
     def reset(self):
         return
@@ -278,17 +278,17 @@ class actionRunMessage(ActionListener):
 
 # 启动线程来完成请求的发送
 class buildHttp(threading.Thread):
-    def __init__(self, threadid, extender, log, body):
+    def __init__(self, threadid, key, extender, log, body):
         threading.Thread.__init__(self)
         self.threadid = threadid
         self._extender = extender
         self._log = log
+        self._key = key
         self._body = body
 
     # 执行代码放在run中，线程在创建后会直接运行run函数
     def run(self):
         method = self._log._method
-
         if method == "GET":
             self.FuzzGet()
         elif (method == "POST" or method == "PUT"):
@@ -434,7 +434,7 @@ class deleteLogtable(ActionListener):
                 # list添加该intruderfuzz 请求
                 # self._extender._stdout.println("test:" + str(i) + ":row:" + str(row))
                 log = self._extender._log.get(i)
-                self._extender._stdout.println(log._data)
+                # self._extender._stdout.println(log._data)
                 # 这里开始判断request中是否存在json请求，识别之后再添加list，并插入工具位置，然后再变换payload
                 '''
                 {"message":"ok","nu":"11111111111","ischeck":"1","com":"yuantong",
@@ -450,13 +450,16 @@ class deleteLogtable(ActionListener):
                     # 重点Fuzz了
                     self._extender._stdout.println(log._data)
                     jsonfuzz = JsonFuzzer()
-                    #payloads_list=jsonfuzz.getMutations(log._data)
-                    for i, val in enumerate(jsonfuzz.getMutations(log._data)):
+                    # payloads_list=jsonfuzz.getMutations(jsonfuzz.getMutations(log._data).items())
+                    self._extender._stdout.println(jsonfuzz.getMutations(log._data).items())
+                    ii = 0
+                    for k, val in jsonfuzz.getMutations(log._data).items():
                         try:
-                            #目前这个方案只能是临时替代，该方案在请求出现异常，会出现不稳定
-                            #log.fuzzpayload=payloads_list[i]
-                            buildHttp(i, self._extender, log, val).start()
-                            self._extender._stdout.println(val)
+                            # 目前这个方案只能是临时替代，该方案在请求出现异常，会出现不稳定
+                            ii = ii + 1
+                            # self._extender._stdout.println(ii)
+                            # self._extender._stdout.println(val)
+                            buildHttp(ii, k, self._extender, log, val).start()
                         except Exception as e:
                             print("buildhttp is error!", e)
 
@@ -526,7 +529,7 @@ class WebFuzz(IIntruderPayloadGenerator):
         # self._extender._stdout.println(corups)
         self.PAYLOADS = []
         for line in self.PAYLOADSS:
-            #self._extender._stdout.println(line)
+            # self._extender._stdout.println(line)
             self.PAYLOADS.append(bytearray(line))
         # self._extender._stdout.println(len(self.PAYLOADSS))
 
@@ -1191,8 +1194,8 @@ class LogEntry:
             self._protocol = True
         else:
             self._protocol = False
-        #预制为空，只要做了fuzz,才会有
-        self.fuzzpayload=""
+        # 预制为空，只要做了fuzz,才会有
+        self.fuzzpayload = ""
 
 
 class FuzzEditor(IMessageEditorController):
