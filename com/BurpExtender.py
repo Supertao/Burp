@@ -9,8 +9,7 @@ import time
 import uuid
 from collections import OrderedDict
 from hashlib import md5
-from threading import Lock
-
+from threading import RLock
 import redis
 from burp import IBurpExtender, ITab, IMessageEditorController, IContextMenuFactory
 from burp import IHttpListener, IScannerCheck, IIntruderPayloadGenerator, IIntruderPayloadGeneratorFactory
@@ -272,18 +271,17 @@ class actionRunMessage(ActionListener):
         listkey = r.keys('*bloomfilter*')
         for key in listkey:
             r.delete(key)
-        #       #几种弹窗的形式：https://www.cnblogs.com/guohaoyu110/p/6440333.html
+        # 几种弹窗的形式：https://www.cnblogs.com/guohaoyu110/p/6440333.html
         JOptionPane.showMessageDialog(None, "Clear Redis Successfully!")
 
 
 # 启动线程来完成请求的发送
 class buildHttp(threading.Thread):
-    def __init__(self, threadid, key, extender, log, body):
+    def __init__(self, threadid, extender, log, body):
         threading.Thread.__init__(self)
         self.threadid = threadid
         self._extender = extender
         self._log = log
-        self._key = key
         self._body = body
 
     # 执行代码放在run中，线程在创建后会直接运行run函数
@@ -314,7 +312,7 @@ class buildHttp(threading.Thread):
             # self._extender._stdout.println(self._log.headers)
             req = self._extender._helpers.buildHttpMessage(self._log.headers, body_byte)
             statusCode = self.makeHttp(req)
-            self._extender._stdout.println("Post code:" + str(statusCode))
+            #self._extender._stdout.println(str(threading.currentThread()) + str(statusCode))
         except Exception as e:
             print("HTTP POST error!", e)
 
@@ -448,18 +446,22 @@ class deleteLogtable(ActionListener):
                     # self._extender._stdout.println(type(log._data))
                     # class org.python.core.PyUnicode转化成dict
                     # 重点Fuzz了
-                    self._extender._stdout.println(log._data)
+                    # self._extender._stdout.println(log._data)
                     jsonfuzz = JsonFuzzer()
                     # payloads_list=jsonfuzz.getMutations(jsonfuzz.getMutations(log._data).items())
-                    self._extender._stdout.println(jsonfuzz.getMutations(log._data).items())
+                    # self._extender._stdout.println(jsonfuzz.getMutations(log._data).items())
+                    # 记录下最原始fuzz的请求data并做对比
+                    log.fuzzpayload = "Origin Request"
+                    self._extender._origindata = log._data
                     ii = 0
                     for k, val in jsonfuzz.getMutations(log._data).items():
                         try:
                             # 目前这个方案只能是临时替代，该方案在请求出现异常，会出现不稳定
                             ii = ii + 1
-                            # self._extender._stdout.println(ii)
-                            # self._extender._stdout.println(val)
-                            buildHttp(ii, k, self._extender, log, val).start()
+                            self._extender._fuzzkeyx = k
+                            self._extender._fuzzActivate = True
+                            # self._extender._stdout.println(str(threading.currentThread())+str(self._extender._fuzzkeyx))
+                            buildHttp(ii, self._extender, log, val).start()
                         except Exception as e:
                             print("buildhttp is error!", e)
 
@@ -467,7 +469,6 @@ class deleteLogtable(ActionListener):
                 # 一定要告知fuzzModel更新了
                 self._extender._fuzzModel.fireTableRowsInserted(row, row)
                 # self.mainTab.setSelectedIndex(2)
-
             return
 
 
@@ -609,7 +610,11 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
         # stderr.println("Hello erroutputs")
         self._log = ArrayList()  # java
         self._fuzz = ArrayList()
-        self._lock = Lock()
+        self._lock = RLock()
+        self._fuzzkey = {}
+        self._fuzzkeyx = ""
+        self._fuzzActivate = False
+        self._origindata = ""
 
         # 0.定义burp插件的主界面（上中下三个部分）
         # https: // blog.csdn.net / xietansheng / article / details / 74366517
@@ -887,10 +892,28 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
                     try:
                         if toolFlag == 16 or toolFlag == 1024:
                             self._lock.acquire()
-                            row_fuzz = self._fuzz.size()
-                            self._fuzz.add(LogEntry(toolFlag, messageInfo, self._helpers, self._callbacks))
-                            self._fuzzModel.fireTableRowsInserted(row_fuzz, row_fuzz)
-                            self._lock.release()
+                            try:
+                                # fuzzmessage = "key:{},post data:{}".format(self._fuzzkeyx, bodyStrings)
+                                #self._stdout.println(str(threading.currentThread())+fuzzmessage)
+                                #self._stdout.println(str(bodyStrings)+":"+str(self._origindata))
+                                # 对比下原始的请求和bodyStrings差异
+                                #bodyStrings="'"+bodyStrings+"'"
+                                #originStrings="'"+self._origindata+"'"
+                                #self._stdout.println(bodyStrings + ":::" + originStrings)
+                                diff=self.strDiff(str(bodyStrings),str(self._origindata))
+                                self._stdout.println("diff test:" + diff)
+                                row_fuzz = self._fuzz.size()
+                                self.fuzzLog = LogEntry(toolFlag, messageInfo, self._helpers, self._callbacks)
+                                self._fuzz.add(self.fuzzLog)
+                                if self._fuzzActivate:
+                                    self.fuzzLog.fuzzpayload = diff
+                                    # self._fuzzActivate=False
+                                else:
+                                    self.fuzzLog.fuzzpayload = ""
+
+                                self._fuzzModel.fireTableRowsInserted(row_fuzz, row_fuzz)
+                            finally:
+                                self._lock.release()
                         else:
                             self._lock.acquire()
                             row = self._log.size()
@@ -932,6 +955,19 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
     public int getColumnCount();
     public Object getValueAt(int row, int column);
     '''
+
+    def strDiff(self,modify,origin):
+        #print(modify,origin)
+        for index, val in enumerate(modify):
+            if not origin[index] == val:
+                break
+        diffstrings = modify[index:]
+        for index_, val_ in enumerate(diffstrings):
+            #print(diffstrings[index_])
+            if diffstrings[index_] == '"':
+                break
+
+        return diffstrings[:index_]
 
 
 # 渲染器
