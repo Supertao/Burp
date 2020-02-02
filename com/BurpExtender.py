@@ -38,6 +38,7 @@ from javax.swing import JTable
 from javax.swing import JTextField
 from javax.swing import ScrollPaneConstants
 from javax.swing.table import DefaultTableModel
+from javax.swing import DefaultListModel
 from javax.swing.table import TableCellRenderer, DefaultTableCellRenderer
 
 
@@ -749,14 +750,21 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
         # 初始化读取payload文件
         self.PAYLOADSS = []
         corups = open('Fuzzing.pay', 'r')
-        # self._extender._stdout.println(corups)
-        for line in corups:
+        #self._stdout.println(corups)
+        #for line in corups:
             # self._extender._stdout.println(line)
-            self.PAYLOADSS.append(line.strip('\n'))
+            #self.PAYLOADSS.append(line.strip('\n'))
 
-        payloadlist = JList(self.PAYLOADSS)
+        #payloadlist = JList(self.PAYLOADSS)
+        #2.3 JList实现增删改
+        model=DefaultListModel()
+        payload_lists=JList(model)
+        for line in corups:
+            model.addElement(line.strip('\n'))
+
+
         optionSplitpane = JSplitPane()
-        optionScrollPane = JScrollPane(payloadlist, ScrollPaneConstants.VERTICAL_SCROLLBAR_ALWAYS,
+        optionScrollPane = JScrollPane(payload_lists, ScrollPaneConstants.VERTICAL_SCROLLBAR_ALWAYS,
                                        ScrollPaneConstants.HORIZONTAL_SCROLLBAR_AS_NEEDED)
         optionTextField = JTextField(8)
         label = JLabel("""<html>Web Fuzz<br><body><p>A payload in Webfuzz is a source of data.</p></body></html>""")
