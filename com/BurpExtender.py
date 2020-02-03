@@ -22,7 +22,9 @@ from java.awt.event import MouseAdapter
 from java.io import PrintWriter
 from java.lang import Boolean
 from java.util import ArrayList
+from javax.swing import BoxLayout
 from javax.swing import BorderFactory
+from javax.swing import DefaultListModel
 from javax.swing import JButton
 from javax.swing import JCheckBox
 from javax.swing import JLabel
@@ -38,7 +40,6 @@ from javax.swing import JTable
 from javax.swing import JTextField
 from javax.swing import ScrollPaneConstants
 from javax.swing.table import DefaultTableModel
-from javax.swing import DefaultListModel
 from javax.swing.table import TableCellRenderer, DefaultTableCellRenderer
 
 
@@ -313,7 +314,7 @@ class buildHttp(threading.Thread):
             # self._extender._stdout.println(self._log.headers)
             req = self._extender._helpers.buildHttpMessage(self._log.headers, body_byte)
             statusCode = self.makeHttp(req)
-            #self._extender._stdout.println(str(threading.currentThread()) + str(statusCode))
+            # self._extender._stdout.println(str(threading.currentThread()) + str(statusCode))
         except Exception as e:
             print("HTTP POST error!", e)
 
@@ -327,6 +328,21 @@ class buildHttp(threading.Thread):
         else:
             statusCode = 500
         return statusCode
+
+#options面板增删清
+class deletePayloadlist(ActionListener):
+    def __init__(self,jlist,model):
+        self.jlist=jlist
+        self.model=model
+
+    def actionPerformed(self,evt):
+        jlist_btn=evt.getActionCommand()
+        if jlist_btn =="Remove":
+            index=self.jlist.getSelectedIndex()
+            if index > -1:
+                self.model.removeElementAt(index)
+        elif jlist_btn =="Clear":
+            self.model.removeAllElements()
 
 
 # 删除选中的行,最终要删除列表中的实体
@@ -750,27 +766,53 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
         # 初始化读取payload文件
         self.PAYLOADSS = []
         corups = open('Fuzzing.pay', 'r')
-        #self._stdout.println(corups)
-        #for line in corups:
-            # self._extender._stdout.println(line)
-            #self.PAYLOADSS.append(line.strip('\n'))
+        # self._stdout.println(corups)
+        # for line in corups:
+        # self._extender._stdout.println(line)
+        # self.PAYLOADSS.append(line.strip('\n'))
 
-        #payloadlist = JList(self.PAYLOADSS)
-        #2.3 JList实现增删改
-        model=DefaultListModel()
-        payload_lists=JList(model)
+        # payloadlist = JList(self.PAYLOADSS)
+        # 2.3 JList实现增删改
+        model = DefaultListModel()
+        payload_lists = JList(model)
         for line in corups:
             model.addElement(line.strip('\n'))
 
+        # options面板,垂直布局
+        optionSpane = JPanel()
+        layout = BoxLayout(optionSpane, BoxLayout.Y_AXIS)
+        optionSpane.setLayout(layout)
 
+        optionTop = JPanel()
+        layout_top = BoxLayout(optionTop, BoxLayout.Y_AXIS)
+        optionTop.setLayout(layout_top)
+        optionTop.setBorder(BorderFactory.createTitledBorder("Payload List"))
+        loadPayload = JButton("Load")
+        addPayload = JButton("Add")
+        removePayload = JButton("Remove")
+        clearPayload = JButton("Clear")
+        # 添加监听事件
+        removePayload.addActionListener(deletePayloadlist(payload_lists, model))
+        clearPayload.addActionListener(deletePayloadlist(payload_lists, model))
+
+        optionBottom = JPanel()
+        layout_bottom = BoxLayout(optionBottom, BoxLayout.X_AXIS)
+        optionBottom.setLayout(layout_bottom)
+        optionBottom.add(loadPayload)
+        optionBottom.add(addPayload)
+        optionBottom.add(removePayload)
+        optionBottom.add(clearPayload)
+
+        optionAddPanel = JPanel()
+        label = JLabel("""<html>Web Fuzz<br><body><p>A payload in Webfuzz is a source of data.</p></body></html>""")
         optionSplitpane = JSplitPane()
         optionScrollPane = JScrollPane(payload_lists, ScrollPaneConstants.VERTICAL_SCROLLBAR_ALWAYS,
                                        ScrollPaneConstants.HORIZONTAL_SCROLLBAR_AS_NEEDED)
-        optionTextField = JTextField(8)
-        label = JLabel("""<html>Web Fuzz<br><body><p>A payload in Webfuzz is a source of data.</p></body></html>""")
-        optionAddPanel = JPanel()
+        optionTop.add(optionScrollPane)
+        optionTop.add(optionBottom)
+        optionSpane.add(optionTop)
         optionAddPanel.add(label)
-        optionSplitpane.setLeftComponent(optionScrollPane)
+        optionSplitpane.setLeftComponent(optionSpane)
         optionSplitpane.setRightComponent(optionAddPanel)
 
         self.mainTab.add("Main", mainPanel)
@@ -785,7 +827,7 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
         callbacks.customizeUiComponent(self.mainTab)
         callbacks.customizeUiComponent(self.logTable)
         callbacks.customizeUiComponent(logscrollPane)
-        callbacks.customizeUiComponent(optionScrollPane)
+        callbacks.customizeUiComponent(optionSplitpane)
         callbacks.customizeUiComponent(requestResponseView)
         # 一定要加ITab,不然没有界面
         callbacks.addSuiteTab(self)
@@ -902,13 +944,13 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
                             self._lock.acquire()
                             try:
                                 # fuzzmessage = "key:{},post data:{}".format(self._fuzzkeyx, bodyStrings)
-                                #self._stdout.println(str(threading.currentThread())+fuzzmessage)
-                                #self._stdout.println(str(bodyStrings)+":"+str(self._origindata))
+                                # self._stdout.println(str(threading.currentThread())+fuzzmessage)
+                                # self._stdout.println(str(bodyStrings)+":"+str(self._origindata))
                                 # 对比下原始的请求和bodyStrings差异
-                                #bodyStrings="'"+bodyStrings+"'"
-                                #originStrings="'"+self._origindata+"'"
-                                #self._stdout.println(bodyStrings + ":::" + originStrings)
-                                diff=self.strDiff(str(bodyStrings),str(self._origindata))
+                                # bodyStrings="'"+bodyStrings+"'"
+                                # originStrings="'"+self._origindata+"'"
+                                # self._stdout.println(bodyStrings + ":::" + originStrings)
+                                diff = self.strDiff(str(bodyStrings), str(self._origindata))
                                 self._stdout.println("diff test:" + diff)
                                 row_fuzz = self._fuzz.size()
                                 self.fuzzLog = LogEntry(toolFlag, messageInfo, self._helpers, self._callbacks)
@@ -964,14 +1006,14 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
     public Object getValueAt(int row, int column);
     '''
 
-    def strDiff(self,modify,origin):
-        #print(modify,origin)
+    def strDiff(self, modify, origin):
+        # print(modify,origin)
         for index, val in enumerate(modify):
             if not origin[index] == val:
                 break
         diffstrings = modify[index:]
         for index_, val_ in enumerate(diffstrings):
-            #print(diffstrings[index_])
+            # print(diffstrings[index_])
             if diffstrings[index_] == '"':
                 break
 
