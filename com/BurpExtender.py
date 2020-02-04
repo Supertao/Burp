@@ -1,6 +1,7 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 import base64
+import os
 import json
 import re
 import string
@@ -37,16 +38,20 @@ from javax.swing import JScrollPane
 from javax.swing import JSplitPane
 from javax.swing import JTabbedPane
 from javax.swing import JTable
-from javax.swing import JTextField
+from javax.swing import ListCellRenderer
+from javax.swing import JFileChooser
 from javax.swing import ScrollPaneConstants
 from javax.swing.table import DefaultTableModel
 from javax.swing.table import TableCellRenderer, DefaultTableCellRenderer
 
 
 class Payload():
+    def __init__(self,filename):
+        self.filename=filename
+
     def generator(self):
         PAYLOADS = []
-        with open('Fuzzing.pay', 'r') as payload:
+        with open(self.filename, 'r') as payload:
             line = payload.readline()
             while line != '':
                 PAYLOADS.append(line.strip('\n'))
@@ -144,7 +149,7 @@ class BasicTypeFuzzer:
         return ordered.keys()
 
     def stringMutations(self, mutations):
-        p = Payload()
+        p = Payload("Fuzzing.pay")
         for i in p.generator():
             i = json.dumps(i)
             # print(i)
@@ -343,6 +348,19 @@ class deletePayloadlist(ActionListener):
                 self.model.removeElementAt(index)
         elif jlist_btn =="Clear":
             self.model.removeAllElements()
+
+        elif jlist_btn == "Load ...":
+            jfc = JFileChooser()
+            jfc.setFileSelectionMode(JFileChooser.FILES_AND_DIRECTORIES)
+            jfc.showDialog(JLabel(), None)
+            file = jfc.getSelectedFile()
+            # 判断文件还是文件夹
+            if os.path.isfile(str(file)):
+                p = Payload(str(file))
+                self.model.removeAllElements()
+                for i in p.generator():
+                    print(i)
+                    self.model.addElement(i)
 
 
 # 删除选中的行,最终要删除列表中的实体
@@ -775,6 +793,8 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
         # 2.3 JList实现增删改
         model = DefaultListModel()
         payload_lists = JList(model)
+        jlistrender=JlistCellRenderer()
+        payload_lists.setCellRenderer(jlistrender)
         for line in corups:
             model.addElement(line.strip('\n'))
 
@@ -787,11 +807,12 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
         layout_top = BoxLayout(optionTop, BoxLayout.Y_AXIS)
         optionTop.setLayout(layout_top)
         optionTop.setBorder(BorderFactory.createTitledBorder("Payload List"))
-        loadPayload = JButton("Load")
+        loadPayload = JButton("Load ...")
         addPayload = JButton("Add")
         removePayload = JButton("Remove")
         clearPayload = JButton("Clear")
         # 添加监听事件
+        loadPayload.addActionListener(deletePayloadlist(payload_lists, model))
         removePayload.addActionListener(deletePayloadlist(payload_lists, model))
         clearPayload.addActionListener(deletePayloadlist(payload_lists, model))
 
@@ -1019,6 +1040,29 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
 
         return diffstrings[:index_]
 
+
+#定义jlist
+#https://www.javadrive.jp/tutorial/jlist/index14.html
+#JList list,Object value,int index,boolean isSelected,boolean cellHasFocus
+class JlistCellRenderer(ListCellRenderer):
+    def __init__(self):
+        print("OK")
+        self.label=JLabel()
+        self.label.setOpaque(True)
+        print("OK1")
+
+    def getListCellRendererComponent(self,list,value,index,isSelected,cellHasFocus):
+        print("OK2")
+        if isSelected:
+            print(isSelected)
+            self.label.setText("*"+str(value)+"*")
+            self.label.setBackground(Color.RED)
+        if index % 2 == 0:
+            self.setBackground(Color.RED)
+        else:
+            self.setBackground(Color.BLUE)
+
+        return self.label
 
 # 渲染器
 class FuzzTableCellRenderer(TableCellRenderer):
