@@ -1,8 +1,8 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 import base64
-import os
 import json
+import os
 import re
 import string
 import threading
@@ -17,19 +17,19 @@ from burp import IHttpListener, IScannerCheck, IIntruderPayloadGenerator, IIntru
 from jarray import array
 from java.awt import BorderLayout
 from java.awt import Color
+from java.awt import Dimension
 from java.awt import FlowLayout
 from java.awt.event import ActionListener
 from java.awt.event import MouseAdapter
 from java.io import PrintWriter
 from java.lang import Boolean
 from java.util import ArrayList
-from javax.swing import BoxLayout
 from javax.swing import BorderFactory
-from javax.swing import DefaultListModel
+from javax.swing import BoxLayout
 from javax.swing import JButton
 from javax.swing import JCheckBox
+from javax.swing import JFileChooser
 from javax.swing import JLabel
-from javax.swing import JList
 from javax.swing import JMenu, JMenuItem
 from javax.swing import JOptionPane
 from javax.swing import JPanel
@@ -39,15 +39,14 @@ from javax.swing import JSplitPane
 from javax.swing import JTabbedPane
 from javax.swing import JTable
 from javax.swing import ListCellRenderer
-from javax.swing import JFileChooser
 from javax.swing import ScrollPaneConstants
 from javax.swing.table import DefaultTableModel
 from javax.swing.table import TableCellRenderer, DefaultTableCellRenderer
 
 
 class Payload():
-    def __init__(self,filename):
-        self.filename=filename
+    def __init__(self, filename):
+        self.filename = filename
 
     def generator(self):
         PAYLOADS = []
@@ -334,19 +333,30 @@ class buildHttp(threading.Thread):
             statusCode = 500
         return statusCode
 
-#options面板增删清
-class deletePayloadlist(ActionListener):
-    def __init__(self,jlist,model):
-        self.jlist=jlist
-        self.model=model
 
-    def actionPerformed(self,evt):
-        jlist_btn=evt.getActionCommand()
-        if jlist_btn =="Remove":
-            index=self.jlist.getSelectedIndex()
-            if index > -1:
-                self.model.removeElementAt(index)
-        elif jlist_btn =="Clear":
+# options面板增删清
+class deletePayloadlist(ActionListener):
+    def __init__(self,extender,selectRow):
+        self._extender=extender
+        self.selectRow=selectRow
+
+
+    def actionPerformed(self, evt):
+        jlist_btn = evt.getActionCommand()
+
+        if jlist_btn == "Remove":
+            self._extender._stdout.println("OK111")
+            #if self.selectRow == -1:
+                #return
+            #self.selectRow.reverse()
+            self._extender._stdout.println("OK222")
+            for i in self.selectRow:
+                self._extender._stdout.println(i)
+                self._extender.payload_lists.remove(i)
+                # 一定要通知数据模型更新数据
+                self._extender.payloadmodel.fireTableDataChanged()
+            self._extender._stdout.println("OK333")
+        elif jlist_btn == "Clear":
             self.model.removeAllElements()
 
         elif jlist_btn == "Load ...":
@@ -396,7 +406,7 @@ class deleteLogtable(ActionListener):
                 return
             self._row.reverse()
             for i in self._row:
-                # self._extender._stdout.println("remove:" + str(i))
+                self._extender._stdout.println(type(self._row))
                 self._logx.remove(i)
                 # 一定要通知数据模型更新数据
                 self._model.fireTableDataChanged()
@@ -404,8 +414,8 @@ class deleteLogtable(ActionListener):
                                                                   self._extender._log.size(), i)
                 self._extender._stdout.println(messages)
 
-            self._extender._stdout.println(type(self._row))
-            self._extender._stdout.println(self._row)
+            #self._extender._stdout.println(type(self._row))
+            #self._extender._stdout.println(self._row)
             # 千万不要写_row
             if self._logx.size() == 0:
                 self.clearMessage(self.reqView, self.respView)
@@ -541,7 +551,7 @@ class popmenuListener(MouseAdapter):
             mpopMenu.addSeparator()
             mpopMenu.add(copyMenu)
             # 通过点击位置找到点击为表格中的行
-            self._extender._focusedRow = self._table.getSelectedRows();
+            self._extender._focusedRow = self._table.getSelectedRows()
             # self._extender._stdout.println(self._extender._focusedRow)
             # 一定要为按钮添加点击事件
             deleteMenu.addActionListener(deleteLogtable(self._extender, self._extender._focusedRow, self._sign))
@@ -782,21 +792,27 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
         fuzzsplitpane.setRightComponent(req_respFuzzView)
 
         # 初始化读取payload文件
-        self.PAYLOADSS = []
+        self.payload_lists = ArrayList()
         corups = open('Fuzzing.pay', 'r')
         # self._stdout.println(corups)
-        # for line in corups:
-        # self._extender._stdout.println(line)
-        # self.PAYLOADSS.append(line.strip('\n'))
-
-        # payloadlist = JList(self.PAYLOADSS)
-        # 2.3 JList实现增删改
-        model = DefaultListModel()
-        payload_lists = JList(model)
-        jlistrender=JlistCellRenderer()
-        payload_lists.setCellRenderer(jlistrender)
         for line in corups:
-            model.addElement(line.strip('\n'))
+            # self._extender._stdout.println(line)
+            self.payload_lists.add(line.strip('\n'))
+
+        # 2.3 JList实现增删改
+        self.payloadmodel = PayloadModel(self, self.payload_lists)
+        self.payloadTable = PayloadTable(self, self.payloadmodel)
+        self.payloadTable.getTableHeader().setVisible(False)
+        renderer = DefaultTableCellRenderer()
+        renderer.setPreferredSize(Dimension(0, 0))
+        self.payloadTable.getTableHeader().setDefaultRenderer(renderer)
+
+        # model = DefaultListModel()
+        # payload_lists =JList(model);
+        # jlistrender=JListCellRenderer()
+        # payload_lists.setCellRenderer(jlistrender)
+        # for line in corups:
+        # model.addElement(line.strip('\n'))
 
         # options面板,垂直布局
         optionSpane = JPanel()
@@ -811,10 +827,12 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
         addPayload = JButton("Add")
         removePayload = JButton("Remove")
         clearPayload = JButton("Clear")
+        self._selectedRow = self.payloadTable.getSelectedRows()
+        self._stdout.println(self._selectedRow)
         # 添加监听事件
-        loadPayload.addActionListener(deletePayloadlist(payload_lists, model))
-        removePayload.addActionListener(deletePayloadlist(payload_lists, model))
-        clearPayload.addActionListener(deletePayloadlist(payload_lists, model))
+        #loadPayload.addActionListener(deletePayloadlist(payload_lists, model))
+        removePayload.addActionListener(deletePayloadlist(self, self._selectedRow))
+        clearPayload.addActionListener(deletePayloadlist(self, self._selectedRow))
 
         optionBottom = JPanel()
         layout_bottom = BoxLayout(optionBottom, BoxLayout.X_AXIS)
@@ -827,12 +845,14 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
         optionAddPanel = JPanel()
         label = JLabel("""<html>Web Fuzz<br><body><p>A payload in Webfuzz is a source of data.</p></body></html>""")
         optionSplitpane = JSplitPane()
-        optionScrollPane = JScrollPane(payload_lists, ScrollPaneConstants.VERTICAL_SCROLLBAR_ALWAYS,
+        optionScrollPane = JScrollPane(self.payloadTable, ScrollPaneConstants.VERTICAL_SCROLLBAR_ALWAYS,
                                        ScrollPaneConstants.HORIZONTAL_SCROLLBAR_AS_NEEDED)
         optionTop.add(optionScrollPane)
         optionTop.add(optionBottom)
         optionSpane.add(optionTop)
         optionAddPanel.add(label)
+        optionSplitpane.setDividerLocation(340);
+        #optionSplitpane.setResizeWeight(1)
         optionSplitpane.setLeftComponent(optionSpane)
         optionSplitpane.setRightComponent(optionAddPanel)
 
@@ -1041,21 +1061,21 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
         return diffstrings[:index_]
 
 
-#定义jlist
-#https://www.javadrive.jp/tutorial/jlist/index14.html
-#JList list,Object value,int index,boolean isSelected,boolean cellHasFocus
-class JlistCellRenderer(ListCellRenderer):
+# 定义jlist
+# https://www.javadrive.jp/tutorial/jlist/index14.html
+# JList list,Object value,int index,boolean isSelected,boolean cellHasFocus
+class JListCellRenderer(ListCellRenderer):
     def __init__(self):
         print("OK")
-        self.label=JLabel()
+        self.label = JLabel()
         self.label.setOpaque(True)
         print("OK1")
 
-    def getListCellRendererComponent(self,list,value,index,isSelected,cellHasFocus):
+    def getListCellRendererComponent(self, list, value, index, isSelected, cellHasFocus):
         print("OK2")
         if isSelected:
             print(isSelected)
-            self.label.setText("*"+str(value)+"*")
+            self.label.setText("*" + str(value) + "*")
             self.label.setBackground(Color.RED)
         if index % 2 == 0:
             self.setBackground(Color.RED)
@@ -1063,6 +1083,7 @@ class JlistCellRenderer(ListCellRenderer):
             self.setBackground(Color.BLUE)
 
         return self.label
+
 
 # 渲染器
 class FuzzTableCellRenderer(TableCellRenderer):
@@ -1228,7 +1249,7 @@ class TableModel(DefaultTableModel):
         if columnIndex == 5:
             return logEntry._status
         if columnIndex == 6:
-            return "Length<img>"
+            return "Length"
         if columnIndex == 7:
             return logEntry._mime
         if columnIndex == 8:
@@ -1238,6 +1259,42 @@ class TableModel(DefaultTableModel):
         if columnIndex == 10:
             return ""
         return ""
+
+
+class PayloadModel(DefaultTableModel):
+    def __init__(self, extender, log):
+        self._extender = extender
+        self._logx = log
+
+    def getColumnWidth(self, columnIndex):
+        if columnIndex == 0:
+            return 60
+        return 60
+
+    def getColumnCount(self):
+        return 1
+
+    def getRowCount(self):
+        # self._extender._stdout.println("test:"+str(self._extender._log.size()))
+        return self._logx.size()
+
+    def getColumnClass(self, columnIndex):
+        return str
+
+    def isCellEditable(self, row, columnIndex):
+        return False
+
+    def getValueAt(self, row, columnIndex):
+        logEntry = self._logx.get(row)
+        if columnIndex == 0:
+            return logEntry
+        return ""
+
+
+class PayloadTable(JTable):
+    def __init__(self, extender, model):
+        self._extender = extender
+        self.setModel(model)
 
 
 # Jtable https://www.169it.com/article/12959732718244742024.html
@@ -1363,7 +1420,10 @@ class BloomFilter():
         :param blockNum: one blockNum for about 90,000,000; if you have more strings for filtering, increase it.
         :param key: the key's name in Redis
         """
-        self.server = redis.Redis(host=host, port=port, db=db)
+        try:
+            self.server = redis.Redis(host=host, port=port, db=db)
+        except Exception as e:
+            print("Redis connection error!", e)
         self.bit_size = 1 << 31  # Redis的String类型最大容量为512M，现使用256M
         self.seeds = [5, 7, 11, 13, 31, 37, 61]
         self.key = key
