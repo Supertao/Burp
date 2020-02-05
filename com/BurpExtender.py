@@ -11,6 +11,7 @@ import uuid
 from collections import OrderedDict
 from hashlib import md5
 from threading import RLock
+
 import redis
 from burp import IBurpExtender, ITab, IMessageEditorController, IContextMenuFactory
 from burp import IHttpListener, IScannerCheck, IIntruderPayloadGenerator, IIntruderPayloadGeneratorFactory
@@ -336,26 +337,21 @@ class buildHttp(threading.Thread):
 
 # options面板增删清
 class deletePayloadlist(ActionListener):
-    def __init__(self,extender,selectRow):
-        self._extender=extender
-        self.selectRow=selectRow
-
+    def __init__(self, extender, selectRow):
+        self._extender = extender
+        self.selectRow = selectRow
 
     def actionPerformed(self, evt):
         jlist_btn = evt.getActionCommand()
-
         if jlist_btn == "Remove":
-            self._extender._stdout.println("OK111")
-            #if self.selectRow == -1:
-                #return
-            #self.selectRow.reverse()
-            self._extender._stdout.println("OK222")
+            # if self.selectRow == -1:
+            # return
+            self.selectRow.reverse()
             for i in self.selectRow:
                 self._extender._stdout.println(i)
                 self._extender.payload_lists.remove(i)
                 # 一定要通知数据模型更新数据
                 self._extender.payloadmodel.fireTableDataChanged()
-            self._extender._stdout.println("OK333")
         elif jlist_btn == "Clear":
             self.model.removeAllElements()
 
@@ -414,8 +410,8 @@ class deleteLogtable(ActionListener):
                                                                   self._extender._log.size(), i)
                 self._extender._stdout.println(messages)
 
-            #self._extender._stdout.println(type(self._row))
-            #self._extender._stdout.println(self._row)
+            # self._extender._stdout.println(type(self._row))
+            # self._extender._stdout.println(self._row)
             # 千万不要写_row
             if self._logx.size() == 0:
                 self.clearMessage(self.reqView, self.respView)
@@ -527,42 +523,65 @@ class popmenuListener(MouseAdapter):
         elif sign == "main":
             self._table = self._extender.logTable
             self.modelx = self._extender._dataModel
+        elif sign == "payloadlist":
+            self._table = self._extender.payloadTable
+            self._modelx = self._extender.payloadmodel
 
     def mouseClicked(self, evt):
         # 右键值为3
         if evt.getButton() == 3:
-            # 创建弹窗对象
-            mpopMenu = JPopupMenu()
-            deleteMenu = JMenuItem("Remove Selected")
-            repeaterMenu = JMenuItem("Send to Repeater")
-            intruderMenu = JMenuItem("Send to Intruder")
-            copyMenu = JMenuItem("Copy URL")
-            activeMenu = JMenuItem("Active Scan")
-            intruderFuzzMenu = JMenuItem("IntruderFuzz")
-            clearMenu = JMenuItem("Clear All Histroy")
-            mpopMenu.add(deleteMenu)
-            mpopMenu.add(repeaterMenu)
-            mpopMenu.add(intruderMenu)
-            mpopMenu.add(activeMenu)
-            mpopMenu.add(intruderFuzzMenu)
-            # 添加一条分割符，达到提示的效果
-            mpopMenu.addSeparator()
-            mpopMenu.add(clearMenu)
-            mpopMenu.addSeparator()
-            mpopMenu.add(copyMenu)
-            # 通过点击位置找到点击为表格中的行
-            self._extender._focusedRow = self._table.getSelectedRows()
-            # self._extender._stdout.println(self._extender._focusedRow)
-            # 一定要为按钮添加点击事件
-            deleteMenu.addActionListener(deleteLogtable(self._extender, self._extender._focusedRow, self._sign))
-            clearMenu.addActionListener(deleteLogtable(self._extender, self._extender._focusedRow, self._sign))
-            repeaterMenu.addActionListener(deleteLogtable(self._extender, self._extender._focusedRow, self._sign))
-            intruderMenu.addActionListener(deleteLogtable(self._extender, self._extender._focusedRow, self._sign))
-            # deleteMenu.addActionListener()
-            activeMenu.addActionListener(deleteLogtable(self._extender, self._extender._focusedRow, self._sign))
-            intruderFuzzMenu.addActionListener(deleteLogtable(self._extender, self._extender._focusedRow, self._sign))
-            # 一定要指定位置显示弹窗
-            mpopMenu.show(self._table, evt.getX(), evt.getY())
+            if self._sign == "payloadlist":
+                # 创建弹窗对象
+                mpopMenu = JPopupMenu()
+                deleteMenu = JMenuItem("Remove")
+                copyMenu = JMenuItem("Copy")
+                clearMenu = JMenuItem("Clear")
+                mpopMenu.add(deleteMenu)
+                mpopMenu.add(copyMenu)
+                mpopMenu.add(clearMenu)
+                # 通过点击位置找到点击为表格中的行
+                _selectedRow = self._table.getSelectedRows()
+                # 一定要为按钮添加点击事件
+                deleteMenu.addActionListener(deletePayloadlist(self._extender, _selectedRow))
+                clearMenu.addActionListener(deletePayloadlist(self._extender, _selectedRow))
+                # 一定要指定位置显示弹窗
+                mpopMenu.show(self._table, evt.getX(), evt.getY())
+
+
+            else:
+                # 创建弹窗对象
+                mpopMenu = JPopupMenu()
+                deleteMenu = JMenuItem("Remove Selected")
+                repeaterMenu = JMenuItem("Send to Repeater")
+                intruderMenu = JMenuItem("Send to Intruder")
+                copyMenu = JMenuItem("Copy URL")
+                activeMenu = JMenuItem("Active Scan")
+                intruderFuzzMenu = JMenuItem("IntruderFuzz")
+                clearMenu = JMenuItem("Clear All Histroy")
+                mpopMenu.add(deleteMenu)
+                mpopMenu.add(repeaterMenu)
+                mpopMenu.add(intruderMenu)
+                mpopMenu.add(activeMenu)
+                mpopMenu.add(intruderFuzzMenu)
+                # 添加一条分割符，达到提示的效果
+                mpopMenu.addSeparator()
+                mpopMenu.add(clearMenu)
+                mpopMenu.addSeparator()
+                mpopMenu.add(copyMenu)
+                # 通过点击位置找到点击为表格中的行
+                self._extender._focusedRow = self._table.getSelectedRows()
+                # self._extender._stdout.println(self._extender._focusedRow)
+                # 一定要为按钮添加点击事件
+                deleteMenu.addActionListener(deleteLogtable(self._extender, self._extender._focusedRow, self._sign))
+                clearMenu.addActionListener(deleteLogtable(self._extender, self._extender._focusedRow, self._sign))
+                repeaterMenu.addActionListener(deleteLogtable(self._extender, self._extender._focusedRow, self._sign))
+                intruderMenu.addActionListener(deleteLogtable(self._extender, self._extender._focusedRow, self._sign))
+                # deleteMenu.addActionListener()
+                activeMenu.addActionListener(deleteLogtable(self._extender, self._extender._focusedRow, self._sign))
+                intruderFuzzMenu.addActionListener(
+                    deleteLogtable(self._extender, self._extender._focusedRow, self._sign))
+                # 一定要指定位置显示弹窗
+                mpopMenu.show(self._table, evt.getX(), evt.getY())
 
 
 class WebFuzz(IIntruderPayloadGenerator):
@@ -807,13 +826,6 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
         renderer.setPreferredSize(Dimension(0, 0))
         self.payloadTable.getTableHeader().setDefaultRenderer(renderer)
 
-        # model = DefaultListModel()
-        # payload_lists =JList(model);
-        # jlistrender=JListCellRenderer()
-        # payload_lists.setCellRenderer(jlistrender)
-        # for line in corups:
-        # model.addElement(line.strip('\n'))
-
         # options面板,垂直布局
         optionSpane = JPanel()
         layout = BoxLayout(optionSpane, BoxLayout.Y_AXIS)
@@ -825,22 +837,15 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
         optionTop.setBorder(BorderFactory.createTitledBorder("Payload List"))
         loadPayload = JButton("Load ...")
         addPayload = JButton("Add")
-        removePayload = JButton("Remove")
-        clearPayload = JButton("Clear")
-        self._selectedRow = self.payloadTable.getSelectedRows()
-        self._stdout.println(self._selectedRow)
         # 添加监听事件
-        #loadPayload.addActionListener(deletePayloadlist(payload_lists, model))
-        removePayload.addActionListener(deletePayloadlist(self, self._selectedRow))
-        clearPayload.addActionListener(deletePayloadlist(self, self._selectedRow))
+        self.payloadTable.addMouseListener(popmenuListener(self, "payloadlist"))
+        # loadPayload.addActionListener(deletePayloadlist(payload_lists, model))
 
         optionBottom = JPanel()
         layout_bottom = BoxLayout(optionBottom, BoxLayout.X_AXIS)
         optionBottom.setLayout(layout_bottom)
         optionBottom.add(loadPayload)
         optionBottom.add(addPayload)
-        optionBottom.add(removePayload)
-        optionBottom.add(clearPayload)
 
         optionAddPanel = JPanel()
         label = JLabel("""<html>Web Fuzz<br><body><p>A payload in Webfuzz is a source of data.</p></body></html>""")
@@ -852,7 +857,7 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
         optionSpane.add(optionTop)
         optionAddPanel.add(label)
         optionSplitpane.setDividerLocation(340);
-        #optionSplitpane.setResizeWeight(1)
+        # optionSplitpane.setResizeWeight(1)
         optionSplitpane.setLeftComponent(optionSpane)
         optionSplitpane.setRightComponent(optionAddPanel)
 
