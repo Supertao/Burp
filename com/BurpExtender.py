@@ -11,7 +11,6 @@ import uuid
 from collections import OrderedDict
 from hashlib import md5
 from threading import RLock
-
 import redis
 from burp import IBurpExtender, ITab, IMessageEditorController, IContextMenuFactory
 from burp import IHttpListener, IScannerCheck, IIntruderPayloadGenerator, IIntruderPayloadGeneratorFactory
@@ -39,6 +38,7 @@ from javax.swing import JScrollPane
 from javax.swing import JSplitPane
 from javax.swing import JTabbedPane
 from javax.swing import JTable
+from javax.swing import JTextField
 from javax.swing import ListCellRenderer
 from javax.swing import ScrollPaneConstants
 from javax.swing.table import DefaultTableModel
@@ -337,9 +337,10 @@ class buildHttp(threading.Thread):
 
 # options面板增删清
 class deletePayloadlist(ActionListener):
-    def __init__(self, extender, selectRow):
+    def __init__(self, extender, selectRow, model):
         self._extender = extender
         self.selectRow = selectRow
+        self.model = model
 
     def actionPerformed(self, evt):
         jlist_btn = evt.getActionCommand()
@@ -353,7 +354,9 @@ class deletePayloadlist(ActionListener):
                 # 一定要通知数据模型更新数据
                 self._extender.payloadmodel.fireTableDataChanged()
         elif jlist_btn == "Clear":
-            self.model.removeAllElements()
+            self._extender.payload_lists.clear()
+            # 一定要通知数据模型更新数据
+            self.model.fireTableDataChanged()
 
         elif jlist_btn == "Load ...":
             jfc = JFileChooser()
@@ -363,13 +366,15 @@ class deletePayloadlist(ActionListener):
             # 判断文件还是文件夹
             if os.path.isfile(str(file)):
                 p = Payload(str(file))
-                self.model.removeAllElements()
                 for i in p.generator():
-                    print(i)
-                    self.model.addElement(i)
+                    self._extender.payload_lists.add(i)
+
+                self.model.fireTableDataChanged()
+        return
+
+    # 删除选中的行,最终要删除列表中的实体
 
 
-# 删除选中的行,最终要删除列表中的实体
 class deleteLogtable(ActionListener):
     def __init__(self, extender, row, sign):
         self._extender = extender
@@ -542,8 +547,10 @@ class popmenuListener(MouseAdapter):
                 # 通过点击位置找到点击为表格中的行
                 _selectedRow = self._table.getSelectedRows()
                 # 一定要为按钮添加点击事件
-                deleteMenu.addActionListener(deletePayloadlist(self._extender, _selectedRow))
-                clearMenu.addActionListener(deletePayloadlist(self._extender, _selectedRow))
+                deleteMenu.addActionListener(
+                    deletePayloadlist(self._extender, _selectedRow, self._extender.payloadmodel))
+                clearMenu.addActionListener(
+                    deletePayloadlist(self._extender, _selectedRow, self._extender.payloadmodel))
                 # 一定要指定位置显示弹窗
                 mpopMenu.show(self._table, evt.getX(), evt.getY())
 
@@ -836,16 +843,23 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
         optionTop.setLayout(layout_top)
         optionTop.setBorder(BorderFactory.createTitledBorder("Payload List"))
         loadPayload = JButton("Load ...")
+        clearPayload = JButton("Clear")
         addPayload = JButton("Add")
+        addPayloadField=JTextField("Add a new Payload")
+        #一定要修复的bug https://blog.csdn.net/andycpp/article/details/1189221?locationNum=5
+        addPayloadField.setMaximumSize(Dimension(120,30))
         # 添加监听事件
         self.payloadTable.addMouseListener(popmenuListener(self, "payloadlist"))
-        # loadPayload.addActionListener(deletePayloadlist(payload_lists, model))
+        loadPayload.addActionListener(deletePayloadlist(self, -1, self.payloadmodel))
+        clearPayload.addActionListener(deletePayloadlist(self, -1, self.payloadmodel))
 
         optionBottom = JPanel()
         layout_bottom = BoxLayout(optionBottom, BoxLayout.X_AXIS)
         optionBottom.setLayout(layout_bottom)
         optionBottom.add(loadPayload)
+        optionBottom.add(clearPayload)
         optionBottom.add(addPayload)
+        optionBottom.add(addPayloadField)
 
         optionAddPanel = JPanel()
         label = JLabel("""<html>Web Fuzz<br><body><p>A payload in Webfuzz is a source of data.</p></body></html>""")
@@ -857,7 +871,6 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
         optionSpane.add(optionTop)
         optionAddPanel.add(label)
         optionSplitpane.setDividerLocation(340);
-        # optionSplitpane.setResizeWeight(1)
         optionSplitpane.setLeftComponent(optionSpane)
         optionSplitpane.setRightComponent(optionAddPanel)
 
