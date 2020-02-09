@@ -791,6 +791,7 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
         # 设置下水平滚动，垂直滚动ScrollPaneConstants.HORIZONTAL_SCROLLBAR_AS_NEEDED,ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED
         logscrollPane = JScrollPane(self.logTable, ScrollPaneConstants.VERTICAL_SCROLLBAR_ALWAYS,
                                     ScrollPaneConstants.HORIZONTAL_SCROLLBAR_AS_NEEDED)
+        splitpane.setDividerLocation(340)
         splitpane.setLeftComponent(logscrollPane)
 
         # 3.下面组件为request|response显示区域
@@ -815,7 +816,7 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
         requestResponseView.setLeftComponent(requestPanel)
         requestResponseView.setRightComponent(responsePanel)
         splitpane.setRightComponent(requestResponseView)
-        mainPanel.add(splitpane, BorderLayout.CENTER)
+        mainPanel.add(splitpane,BorderLayout.CENTER)
 
         # 4.定义Fuzz记录组件
         fuzzsplitpane = JSplitPane(JSplitPane.VERTICAL_SPLIT)  # 垂直分布
@@ -841,6 +842,7 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
         fuzzscrollPane = JScrollPane(self.fuzzTable, ScrollPaneConstants.VERTICAL_SCROLLBAR_ALWAYS,
                                      ScrollPaneConstants.HORIZONTAL_SCROLLBAR_AS_NEEDED)
         fuzzsplitpane.setLeftComponent(fuzzscrollPane)
+
 
         # 4.下面组件为request|response显示区域
         req_respFuzzView = JSplitPane(JSplitPane.HORIZONTAL_SPLIT)
