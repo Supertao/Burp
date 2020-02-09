@@ -11,6 +11,7 @@ import uuid
 from collections import OrderedDict
 from hashlib import md5
 from threading import RLock
+from java.io import FileOutputStream
 import redis
 from burp import IBurpExtender, ITab, IMessageEditorController, IContextMenuFactory
 from burp import IHttpListener, IScannerCheck, IIntruderPayloadGenerator, IIntruderPayloadGeneratorFactory
@@ -20,6 +21,7 @@ from java.awt import Color
 from java.awt import Dimension
 from java.awt import FlowLayout
 from java.awt.event import ActionListener
+from java.awt.event import FocusListener
 from java.awt.event import MouseAdapter
 from java.io import PrintWriter
 from java.lang import Boolean
@@ -43,6 +45,7 @@ from javax.swing import ListCellRenderer
 from javax.swing import ScrollPaneConstants
 from javax.swing.table import DefaultTableModel
 from javax.swing.table import TableCellRenderer, DefaultTableCellRenderer
+from javax.swing.filechooser import FileNameExtensionFilter
 
 
 class Payload():
@@ -335,6 +338,29 @@ class buildHttp(threading.Thread):
         return statusCode
 
 
+class FieldFocusFoListener(FocusListener):
+    def __init__(self, field, hint):
+        self.field = field
+        self.hint=hint
+        self.field.setText(hint)
+        self.field.setForeground(Color.GRAY)
+
+    #获取焦点
+    def focusGained(self,e):
+        temp = self.field.getText()
+        if str(temp) == self.hint:
+            self.field.setText("")
+            self.field.setForeground(Color.BLACK)
+
+    #失去焦点
+    def focusLost(self,e):
+        #清空会导致用户输入的payload未添加，故这里不做任何处理
+        temp=self.field.getText()
+        if str(temp) != self.hint:
+            self.field.setText(self.hint)
+            self.field.setForeground(Color.GRAY)
+
+
 # options面板增删清
 class deletePayloadlist(ActionListener):
     def __init__(self, extender, selectRow, model):
@@ -342,9 +368,17 @@ class deletePayloadlist(ActionListener):
         self.selectRow = selectRow
         self.model = model
 
+
     def actionPerformed(self, evt):
         jlist_btn = evt.getActionCommand()
-        if jlist_btn == "Remove":
+
+        if jlist_btn == "Add":
+            tmp=self._extender.addPayloadField.getText()
+            if tmp !="":
+                self._extender.payload_lists.add(tmp)
+                self.model.fireTableDataChanged()
+
+        elif jlist_btn == "Remove":
             # if self.selectRow == -1:
             # return
             self.selectRow.reverse()
@@ -368,13 +402,26 @@ class deletePayloadlist(ActionListener):
                 p = Payload(str(file))
                 for i in p.generator():
                     self._extender.payload_lists.add(i)
-
                 self.model.fireTableDataChanged()
+        elif jlist_btn == "Export":
+            jfc=JFileChooser()
+            jfc.setDialogType(JFileChooser.SAVE_DIALOG)
+            jfc.setDialogTitle("Export File")
+            option =jfc.showDialog(None,None)
+            if option == JFileChooser.APPROVE_OPTION:
+                file=jfc.getSelectedFile()
+                fos=FileOutputStream(file)
+
+                for i in range(len(self._extender.payload_lists)):
+                    payloadout ="\r\n"+str(self._extender.payload_lists.get(i))
+                    self._extender._stdout.println(payloadout)
+                    fos.write(payloadout)
+                fos.close()
+
         return
 
-    # 删除选中的行,最终要删除列表中的实体
 
-
+# 删除选中的行,最终要删除列表中的实体
 class deleteLogtable(ActionListener):
     def __init__(self, extender, row, sign):
         self._extender = extender
@@ -843,23 +890,27 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
         optionTop.setLayout(layout_top)
         optionTop.setBorder(BorderFactory.createTitledBorder("Payload List"))
         loadPayload = JButton("Load ...")
-        clearPayload = JButton("Clear")
+        #clearPayload = JButton("Clear")
+        exportPayload = JButton("Export")
         addPayload = JButton("Add")
-        addPayloadField=JTextField("Add a new Payload")
-        #一定要修复的bug https://blog.csdn.net/andycpp/article/details/1189221?locationNum=5
-        addPayloadField.setMaximumSize(Dimension(120,30))
+        self.addPayloadField = JTextField()
+        # 一定要修复的bug https://blog.csdn.net/andycpp/article/details/1189221?locationNum=5
+        self.addPayloadField.setMaximumSize(Dimension(120, 30))
+        self.addPayloadField.addFocusListener(FieldFocusFoListener(self.addPayloadField,"Add a new Payload"))
         # 添加监听事件
         self.payloadTable.addMouseListener(popmenuListener(self, "payloadlist"))
+        addPayload.addActionListener(deletePayloadlist(self, -1, self.payloadmodel))
         loadPayload.addActionListener(deletePayloadlist(self, -1, self.payloadmodel))
-        clearPayload.addActionListener(deletePayloadlist(self, -1, self.payloadmodel))
+        exportPayload.addActionListener(deletePayloadlist(self, -1, self.payloadmodel))
+        #clearPayload.addActionListener(deletePayloadlist(self, -1, self.payloadmodel))
 
         optionBottom = JPanel()
         layout_bottom = BoxLayout(optionBottom, BoxLayout.X_AXIS)
         optionBottom.setLayout(layout_bottom)
         optionBottom.add(loadPayload)
-        optionBottom.add(clearPayload)
+        optionBottom.add(exportPayload)
         optionBottom.add(addPayload)
-        optionBottom.add(addPayloadField)
+        optionBottom.add(self.addPayloadField)
 
         optionAddPanel = JPanel()
         label = JLabel("""<html>Web Fuzz<br><body><p>A payload in Webfuzz is a source of data.</p></body></html>""")
