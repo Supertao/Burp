@@ -399,6 +399,7 @@ class deletePayloadlist(ActionListener):
             file = jfc.getSelectedFile()
             # 判断文件还是文件夹
             if os.path.isfile(str(file)):
+                self._extender.payload_lists.clear()
                 p = Payload(str(file))
                 for i in p.generator():
                     self._extender.payload_lists.add(i)
@@ -1063,7 +1064,7 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
                                 # originStrings="'"+self._origindata+"'"
                                 # self._stdout.println(bodyStrings + ":::" + originStrings)
                                 diff = self.strDiff(str(bodyStrings), str(self._origindata))
-                                self._stdout.println("diff test:" + diff)
+                                #self._stdout.println("diff test:" + diff)
                                 row_fuzz = self._fuzz.size()
                                 self.fuzzLog = LogEntry(toolFlag, messageInfo, self._helpers, self._callbacks)
                                 self._fuzz.add(self.fuzzLog)
@@ -1120,6 +1121,7 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
 
     def strDiff(self, modify, origin):
         # print(modify,origin)
+        index=-1
         for index, val in enumerate(modify):
             if not origin[index] == val:
                 break
