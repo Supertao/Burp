@@ -11,7 +11,7 @@ import uuid
 from collections import OrderedDict
 from hashlib import md5
 from threading import RLock
-from java.io import FileOutputStream
+import yaml
 import redis
 from burp import IBurpExtender, ITab, IMessageEditorController, IContextMenuFactory
 from burp import IHttpListener, IScannerCheck, IIntruderPayloadGenerator, IIntruderPayloadGeneratorFactory
@@ -23,6 +23,7 @@ from java.awt import FlowLayout
 from java.awt.event import ActionListener
 from java.awt.event import FocusListener
 from java.awt.event import MouseAdapter
+from java.io import FileOutputStream
 from java.io import PrintWriter
 from java.lang import Boolean
 from java.util import ArrayList
@@ -45,7 +46,6 @@ from javax.swing import ListCellRenderer
 from javax.swing import ScrollPaneConstants
 from javax.swing.table import DefaultTableModel
 from javax.swing.table import TableCellRenderer, DefaultTableCellRenderer
-from javax.swing.filechooser import FileNameExtensionFilter
 
 
 class Payload():
@@ -60,6 +60,20 @@ class Payload():
                 PAYLOADS.append(line.strip('\n'))
                 line = payload.readline()
         return PAYLOADS
+
+    # 将用户添加的保存到文件中去
+    def saveToFile(self):
+        pass
+
+    #读取yaml文件
+    def readYaml(self,yamlfile):
+        if os.path.exists(yamlfile):
+            with open(yamlfile, 'r') as payloadfile:
+                yaml_dict = yaml.load(payloadfile, Loader=yaml.FullLoader)
+            return yaml_dict
+        else:
+            return
+
 
 
 # 定义一个基本的Fuzzer类
@@ -341,21 +355,21 @@ class buildHttp(threading.Thread):
 class FieldFocusFoListener(FocusListener):
     def __init__(self, field, hint):
         self.field = field
-        self.hint=hint
+        self.hint = hint
         self.field.setText(hint)
         self.field.setForeground(Color.GRAY)
 
-    #获取焦点
-    def focusGained(self,e):
+    # 获取焦点
+    def focusGained(self, e):
         temp = self.field.getText()
         if str(temp) == self.hint:
             self.field.setText("")
             self.field.setForeground(Color.BLACK)
 
-    #失去焦点
-    def focusLost(self,e):
-        #清空会导致用户输入的payload未添加，故这里不做任何处理
-        temp=self.field.getText()
+    # 失去焦点
+    def focusLost(self, e):
+        # 清空会导致用户输入的payload未添加，故这里不做任何处理
+        temp = self.field.getText()
         if str(temp) != self.hint:
             self.field.setText(self.hint)
             self.field.setForeground(Color.GRAY)
@@ -368,13 +382,12 @@ class deletePayloadlist(ActionListener):
         self.selectRow = selectRow
         self.model = model
 
-
     def actionPerformed(self, evt):
         jlist_btn = evt.getActionCommand()
 
         if jlist_btn == "Add":
-            tmp=self._extender.addPayloadField.getText()
-            if tmp !="":
+            tmp = self._extender.addPayloadField.getText()
+            if tmp != "":
                 self._extender.payload_lists.add(tmp)
                 self.model.fireTableDataChanged()
 
@@ -405,16 +418,16 @@ class deletePayloadlist(ActionListener):
                     self._extender.payload_lists.add(i)
                 self.model.fireTableDataChanged()
         elif jlist_btn == "Export":
-            jfc=JFileChooser()
+            jfc = JFileChooser()
             jfc.setDialogType(JFileChooser.SAVE_DIALOG)
             jfc.setDialogTitle("Export File")
-            option =jfc.showDialog(None,None)
+            option = jfc.showDialog(None, None)
             if option == JFileChooser.APPROVE_OPTION:
-                file=jfc.getSelectedFile()
-                fos=FileOutputStream(file)
+                file = jfc.getSelectedFile()
+                fos = FileOutputStream(file)
 
                 for i in range(len(self._extender.payload_lists)):
-                    payloadout ="\r\n"+str(self._extender.payload_lists.get(i))
+                    payloadout = "\r\n" + str(self._extender.payload_lists.get(i))
                     self._extender._stdout.println(payloadout)
                     fos.write(payloadout)
                 fos.close()
@@ -682,7 +695,19 @@ class IntruderFuzz(ActionListener):
         self._selectedMessages = selectedMessages
         self._bounds = bounds
 
-    def actionPerformed(self, e):
+    '''
+    Intruder Fuzz
+    Command injection
+    Path Traversal
+    CSV injection
+    XML injection
+    SQL injection
+    Xpath injection
+    '''
+
+    def actionPerformed(self, evt):
+        # 通过获取按钮的内容来做相对的响应（https://www.cnblogs.com/dengyungao/p/7525013.html）
+        buttonName = evt.getActionCommand()
         requestResponse = self._selectedMessages[0]
         httpservice = requestResponse.getHttpService()
         if httpservice.getProtocol() == "https":
@@ -691,12 +716,24 @@ class IntruderFuzz(ActionListener):
             useHttps = False
         request = requestResponse.getRequest()
         insertionOffsets = ArrayList()
-        # https://portswigger.net/burp/extender/writing-your-first-burp-suite-extension
-        insertionOffsets.add(array([self._bounds[0], self._bounds[1]], 'i'))
-        # 拉起主动扫描
-        # doActiveScan(String host,int port,boolean useHttps,byte[] request,List<int[]> insertionPointOffsets);
-        self._extender._callbacks.doActiveScan(httpservice.getHost(), httpservice.getPort(), useHttps, request,
-                                               insertionOffsets)
+
+        if self._bounds != None:
+            # https://portswigger.net/burp/extender/writing-your-first-burp-suite-extension
+            insertionOffsets.add(array([self._bounds[0], self._bounds[1]], 'i'))
+
+        if buttonName == "Intruder Fuzz":
+            # 拉起主动扫描
+            # doActiveScan(String host,int port,boolean useHttps,byte[] request,List<int[]> insertionPointOffsets);
+            self._extender._callbacks.doActiveScan(httpservice.getHost(), httpservice.getPort(), useHttps, request,
+                                                   insertionOffsets)
+        if buttonName == "Command injection":
+            pass
+        if buttonName == "CSV injection":
+            pass
+        if buttonName == "XML injection":
+            pass
+        if buttonName == "SQL injection":
+            pass
 
 
 class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController, IContextMenuFactory, IScannerCheck,
@@ -817,7 +854,7 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
         requestResponseView.setLeftComponent(requestPanel)
         requestResponseView.setRightComponent(responsePanel)
         splitpane.setRightComponent(requestResponseView)
-        mainPanel.add(splitpane,BorderLayout.CENTER)
+        mainPanel.add(splitpane, BorderLayout.CENTER)
 
         # 4.定义Fuzz记录组件
         fuzzsplitpane = JSplitPane(JSplitPane.VERTICAL_SPLIT)  # 垂直分布
@@ -843,7 +880,6 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
         fuzzscrollPane = JScrollPane(self.fuzzTable, ScrollPaneConstants.VERTICAL_SCROLLBAR_ALWAYS,
                                      ScrollPaneConstants.HORIZONTAL_SCROLLBAR_AS_NEEDED)
         fuzzsplitpane.setLeftComponent(fuzzscrollPane)
-
 
         # 4.下面组件为request|response显示区域
         req_respFuzzView = JSplitPane(JSplitPane.HORIZONTAL_SPLIT)
@@ -893,19 +929,19 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
         optionTop.setLayout(layout_top)
         optionTop.setBorder(BorderFactory.createTitledBorder("Payload List"))
         loadPayload = JButton("Load ...")
-        #clearPayload = JButton("Clear")
+        # clearPayload = JButton("Clear")
         exportPayload = JButton("Export")
         addPayload = JButton("Add")
         self.addPayloadField = JTextField()
         # 一定要修复的bug https://blog.csdn.net/andycpp/article/details/1189221?locationNum=5
         self.addPayloadField.setMaximumSize(Dimension(120, 30))
-        self.addPayloadField.addFocusListener(FieldFocusFoListener(self.addPayloadField,"Add a new Payload"))
+        self.addPayloadField.addFocusListener(FieldFocusFoListener(self.addPayloadField, "Add a new Payload"))
         # 添加监听事件
         self.payloadTable.addMouseListener(popmenuListener(self, "payloadlist"))
         addPayload.addActionListener(deletePayloadlist(self, -1, self.payloadmodel))
         loadPayload.addActionListener(deletePayloadlist(self, -1, self.payloadmodel))
         exportPayload.addActionListener(deletePayloadlist(self, -1, self.payloadmodel))
-        #clearPayload.addActionListener(deletePayloadlist(self, -1, self.payloadmodel))
+        # clearPayload.addActionListener(deletePayloadlist(self, -1, self.payloadmodel))
 
         optionBottom = JPanel()
         layout_bottom = BoxLayout(optionBottom, BoxLayout.X_AXIS)
@@ -983,8 +1019,20 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
     def createMenuItems(self, invocation):
         menuList = ArrayList()
         menu = JMenu("Web Fuzz")
-        intruderSelected = JMenuItem("IntruderFuzz")
+        intruderSelected = JMenuItem("Intruder Fuzz")
+        commandSelected = JMenuItem("Command injection")
+        pathSelected = JMenuItem("Path Traversal")
+        csvSelected = JMenuItem("CSV injection")
+        xmlSelected = JMenuItem("XML injection")
+        sqlSelected = JMenuItem("SQL injection")
+        xpathSelected = JMenuItem("Xpath injection")
         menu.add(intruderSelected)
+        menu.add(commandSelected)
+        menu.add(pathSelected)
+        menu.add(csvSelected)
+        menu.add(xmlSelected)
+        menu.add(sqlSelected)
+        menu.add(xpathSelected)
         menuList.add(menu)
         # IHttpRequestResponse[]
         selectedMessagess = invocation.getSelectedMessages()
@@ -1004,7 +1052,8 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
             self._stdout.println("bounds:" + str(len(bounds)))
             intruderSelected.addActionListener(IntruderFuzz(self, selectedMessagess, bounds))
         else:
-            JOptionPane.showMessageDialog(None, "Select some param to Fuzz!")
+            # JOptionPane.showMessageDialog(None, "Select some param to Fuzz!")
+            pass
         return menuList
 
     '''
@@ -1062,9 +1111,9 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
                                 # 对比下原始的请求和bodyStrings差异
                                 # bodyStrings="'"+bodyStrings+"'"
                                 # originStrings="'"+self._origindata+"'"
-                                # self._stdout.println(bodyStrings + ":::" + originStrings)
+                                self._stdout.println(bodyStrings + ":::" + str(self._origindata))
                                 diff = self.strDiff(str(bodyStrings), str(self._origindata))
-                                #self._stdout.println("diff test:" + diff)
+                                # self._stdout.println("diff test:" + diff)
                                 row_fuzz = self._fuzz.size()
                                 self.fuzzLog = LogEntry(toolFlag, messageInfo, self._helpers, self._callbacks)
                                 self._fuzz.add(self.fuzzLog)
@@ -1121,7 +1170,8 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
 
     def strDiff(self, modify, origin):
         # print(modify,origin)
-        index=-1
+        index = -1
+        index_=-1
         for index, val in enumerate(modify):
             if not origin[index] == val:
                 break
@@ -1139,13 +1189,11 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
 # JList list,Object value,int index,boolean isSelected,boolean cellHasFocus
 class JListCellRenderer(ListCellRenderer):
     def __init__(self):
-        print("OK")
+
         self.label = JLabel()
         self.label.setOpaque(True)
-        print("OK1")
 
     def getListCellRendererComponent(self, list, value, index, isSelected, cellHasFocus):
-        print("OK2")
         if isSelected:
             print(isSelected)
             self.label.setText("*" + str(value) + "*")
@@ -1484,6 +1532,24 @@ class simpleHash():
         return (self.cap - 1) & ret
 
 
+'''
+Redis使用connection pool来管理对一个redis server 的所有连接，
+避免每次建立，释放连接的开销，默认，每个Redis实例都会维护一个自己的连接池。
+可以直接建立一个连接池，然后作为参数Redis，这样就可以实现多个Redis实例共享一个连接池。
+'''
+
+
+class RedisCase():
+    def connection(self, host, port, password, db):
+        try:
+            pool = redis.ConnectionPool(host=host, port=port, password=password, db=db)
+        except Exception as e:
+            print("Redis Connection error!", e)
+            rediscase = redis.Redis(connection_pool=pool)
+        return rediscase
+
+
+# https://my.oschina.net/u/3264690/blog/857295
 class BloomFilter():
     def __init__(self, host='127.0.0.1', port=6379, db=0, blockNum=1, key='bloomfilter'):
         """

