@@ -11,8 +11,9 @@ import uuid
 from collections import OrderedDict
 from hashlib import md5
 from threading import RLock
-import yaml
+
 import redis
+import yaml
 from burp import IBurpExtender, ITab, IMessageEditorController, IContextMenuFactory
 from burp import IHttpListener, IScannerCheck, IIntruderPayloadGenerator, IIntruderPayloadGeneratorFactory
 from jarray import array
@@ -65,15 +66,17 @@ class Payload():
     def saveToFile(self):
         pass
 
-    #读取yaml文件
-    def readYaml(self,yamlfile):
-        if os.path.exists(yamlfile):
-            with open(yamlfile, 'r') as payloadfile:
-                yaml_dict = yaml.load(payloadfile, Loader=yaml.FullLoader)
-            return yaml_dict
-        else:
-            return
+    # 读取yaml文件
+    def readYaml(self, yamlfile):
+        with open(yamlfile, 'r') as f:
+            yaml_dict = yaml.load(f.read())
+        return yaml_dict
 
+    def readYaml2(self,yamlfile):
+        with open(yamlfile, 'r', encoding='utf-8') as f:
+            file_content = f.read()
+        content = yaml.load(file_content, yaml.FullLoader)
+        return content
 
 
 # 定义一个基本的Fuzzer类
@@ -735,6 +738,9 @@ class IntruderFuzz(ActionListener):
         if buttonName == "SQL injection":
             pass
 
+        if buttonName == "Two URLEncode":
+            pass
+
 
 class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController, IContextMenuFactory, IScannerCheck,
                    IIntruderPayloadGeneratorFactory):
@@ -903,6 +909,10 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
         req_respFuzzView.setRightComponent(responseFuzzPanel)
         fuzzsplitpane.setRightComponent(req_respFuzzView)
 
+        # 初始化话payload yaml
+        self.yamlPayload = Payload().readYaml2("Fuzzing.yaml")
+
+
         # 初始化读取payload文件
         self.payload_lists = ArrayList()
         corups = open('Fuzzing.pay', 'r')
@@ -1026,6 +1036,7 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
         xmlSelected = JMenuItem("XML injection")
         sqlSelected = JMenuItem("SQL injection")
         xpathSelected = JMenuItem("Xpath injection")
+        twoSelected=JMenuItem("Two URLEncode")
         menu.add(intruderSelected)
         menu.add(commandSelected)
         menu.add(pathSelected)
@@ -1033,6 +1044,7 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
         menu.add(xmlSelected)
         menu.add(sqlSelected)
         menu.add(xpathSelected)
+        menu.add(twoSelected)
         menuList.add(menu)
         # IHttpRequestResponse[]
         selectedMessagess = invocation.getSelectedMessages()
@@ -1171,7 +1183,7 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
     def strDiff(self, modify, origin):
         # print(modify,origin)
         index = -1
-        index_=-1
+        index_ = -1
         for index, val in enumerate(modify):
             if not origin[index] == val:
                 break
