@@ -693,6 +693,7 @@ class IntruderFuzz(ActionListener):
         self._extender = extender
         self._selectedMessages = selectedMessages
         self._bounds = bounds
+        self._helpers=self._extender._helpers
 
     '''
     Intruder Fuzz
@@ -703,52 +704,41 @@ class IntruderFuzz(ActionListener):
     SQL injection
     Xpath injection
     '''
-    def buildRequest(self):
-        requestResponse = self._selectedMessages[0]
-        httpservice = requestResponse.getHttpService()
-        if httpservice.getProtocol() == "https":
-            self.useHttps = True
-        else:
-            self.useHttps = False
-        #byte[] System.arraycopy(src, srcPos, dest, destPos, length)
-        self.request = requestResponse.getRequest()
+    def buildRequest(self,payload,request):
         #insertionOffsets = ArrayList()
         #insertionOffsets.add(array([self._bounds[0], self._bounds[1]], 'i'))
         #python2 byte[]
+        #self._helpers.bytesToString(bodybytes)
+        request_str = self._helpers.bytesToString(request)
+        request_new=request_str[:self._bounds[0]]+payload+request_str[self._bounds[1]:]
+        self._extender._stdout.println(request_new)
+        request_byte=self._helpers.stringToBytes(request_new)
 
-
-
-
-
-
+    def getRequest(self):
+        requestResponse = self._selectedMessages[0]
+        self.httpservice = requestResponse.getHttpService()
+        if self.httpservice.getProtocol() == "https":
+            self.useHttps = True
+        else:
+            self.useHttps = False
+        # byte[]
+        self.request = requestResponse.getRequest()
 
 
     def actionPerformed(self, evt):
         # 通过获取按钮的内容来做相对的响应（https://www.cnblogs.com/dengyungao/p/7525013.html）
         buttonName = evt.getActionCommand()
-
-        requestResponse = self._selectedMessages[0]
-        httpservice = requestResponse.getHttpService()
-        if httpservice.getProtocol() == "https":
-            useHttps = True
-        else:
-            useHttps = False
-         #byte[]
-        request = requestResponse.getRequest()
-        self._extender._stdout.println(str(request[8:16]))
-
-
+        self.getRequest()
         insertionOffsets = ArrayList()
-
         if self._bounds != None:
             # https://portswigger.net/burp/extender/writing-your-first-burp-suite-extension
             insertionOffsets.add(array([self._bounds[0], self._bounds[1]], 'i'))
             self._extender._stdout.println("%s : %s" % (self._bounds[0], self._bounds[1]))
-
         if buttonName == "Intruder Fuzz":
+
             # 拉起主动扫描
             # doActiveScan(String host,int port,boolean useHttps,byte[] request,List<int[]> insertionPointOffsets);
-            self._extender._callbacks.doActiveScan(httpservice.getHost(), httpservice.getPort(), useHttps, request,
+            self._extender._callbacks.doActiveScan(self.httpservice.getHost(), self.httpservice.getPort(), self.useHttps, self.request,
                                                    insertionOffsets)
 
 
@@ -756,8 +746,10 @@ class IntruderFuzz(ActionListener):
             self.yaml=self._extender.yamlPayload
             self._extender._stdout.println(self.yaml['F00001']['payloads'])
             for k,payload in enumerate(self.yaml['F00001']['payloads']):
+                self.buildRequest(payload,self.request)
                 self._extender._stdout.println("%s : %s" % (k+1,payload))
                 #buildHttp(k+1, self._extender, log, payload).start()
+
 
         if buttonName == "CSV Injection":
             pass
