@@ -67,16 +67,12 @@ class Payload():
         pass
 
     # 读取yaml文件
-    def readYaml(self, yamlfile):
-        with open(yamlfile, 'r') as f:
-            yaml_dict = yaml.load(f.read())
-        return yaml_dict
-
-    def readYaml2(self,yamlfile):
-        with open(yamlfile, 'r', encoding='utf-8') as f:
+    def readYaml(self):
+        #需要判断文件是否存在
+        with open(self.filename, 'r') as f:
             file_content = f.read()
-        content = yaml.load(file_content, yaml.FullLoader)
-        return content
+        yaml_dict = yaml.load(file_content, yaml.FullLoader)
+        return yaml_dict
 
 
 # 定义一个基本的Fuzzer类
@@ -707,35 +703,67 @@ class IntruderFuzz(ActionListener):
     SQL injection
     Xpath injection
     '''
+    def buildRequest(self):
+        requestResponse = self._selectedMessages[0]
+        httpservice = requestResponse.getHttpService()
+        if httpservice.getProtocol() == "https":
+            self.useHttps = True
+        else:
+            self.useHttps = False
+        #byte[] System.arraycopy(src, srcPos, dest, destPos, length)
+        self.request = requestResponse.getRequest()
+        #insertionOffsets = ArrayList()
+        #insertionOffsets.add(array([self._bounds[0], self._bounds[1]], 'i'))
+        #python2 byte[]
+
+
+
+
+
+
+
 
     def actionPerformed(self, evt):
         # 通过获取按钮的内容来做相对的响应（https://www.cnblogs.com/dengyungao/p/7525013.html）
         buttonName = evt.getActionCommand()
+
         requestResponse = self._selectedMessages[0]
         httpservice = requestResponse.getHttpService()
         if httpservice.getProtocol() == "https":
             useHttps = True
         else:
             useHttps = False
+         #byte[]
         request = requestResponse.getRequest()
+        self._extender._stdout.println(str(request[8:16]))
+
+
         insertionOffsets = ArrayList()
 
         if self._bounds != None:
             # https://portswigger.net/burp/extender/writing-your-first-burp-suite-extension
             insertionOffsets.add(array([self._bounds[0], self._bounds[1]], 'i'))
+            self._extender._stdout.println("%s : %s" % (self._bounds[0], self._bounds[1]))
 
         if buttonName == "Intruder Fuzz":
             # 拉起主动扫描
             # doActiveScan(String host,int port,boolean useHttps,byte[] request,List<int[]> insertionPointOffsets);
             self._extender._callbacks.doActiveScan(httpservice.getHost(), httpservice.getPort(), useHttps, request,
                                                    insertionOffsets)
-        if buttonName == "Command injection":
+
+
+        if buttonName == "Command Injection":
+            self.yaml=self._extender.yamlPayload
+            self._extender._stdout.println(self.yaml['F00001']['payloads'])
+            for k,payload in enumerate(self.yaml['F00001']['payloads']):
+                self._extender._stdout.println("%s : %s" % (k+1,payload))
+                #buildHttp(k+1, self._extender, log, payload).start()
+
+        if buttonName == "CSV Injection":
             pass
-        if buttonName == "CSV injection":
+        if buttonName == "XML Injection":
             pass
-        if buttonName == "XML injection":
-            pass
-        if buttonName == "SQL injection":
+        if buttonName == "SQL Injection":
             pass
 
         if buttonName == "Two URLEncode":
@@ -910,8 +938,7 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
         fuzzsplitpane.setRightComponent(req_respFuzzView)
 
         # 初始化话payload yaml
-        self.yamlPayload = Payload().readYaml2("Fuzzing.yaml")
-
+        self.yamlPayload = Payload(r"Fuzzing.yaml").readYaml()
 
         # 初始化读取payload文件
         self.payload_lists = ArrayList()
@@ -1030,12 +1057,12 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
         menuList = ArrayList()
         menu = JMenu("Web Fuzz")
         intruderSelected = JMenuItem("Intruder Fuzz")
-        commandSelected = JMenuItem("Command injection")
+        commandSelected = JMenuItem("Command Injection")
         pathSelected = JMenuItem("Path Traversal")
-        csvSelected = JMenuItem("CSV injection")
-        xmlSelected = JMenuItem("XML injection")
-        sqlSelected = JMenuItem("SQL injection")
-        xpathSelected = JMenuItem("Xpath injection")
+        csvSelected = JMenuItem("CSV Injection")
+        xmlSelected = JMenuItem("XML Injection")
+        sqlSelected = JMenuItem("SQL Injection")
+        xpathSelected = JMenuItem("Xpath Injection")
         twoSelected=JMenuItem("Two URLEncode")
         menu.add(intruderSelected)
         menu.add(commandSelected)
@@ -1060,12 +1087,14 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
         except Exception as e:
             print("bounds", e)
 
-        if (selectedMessagess != None and bounds != None and len(bounds) >= 2):
+        if len(bounds) >= 2:
             self._stdout.println("bounds:" + str(len(bounds)))
             intruderSelected.addActionListener(IntruderFuzz(self, selectedMessagess, bounds))
+            commandSelected.addActionListener(IntruderFuzz(self, selectedMessagess, bounds))
         else:
             # JOptionPane.showMessageDialog(None, "Select some param to Fuzz!")
             pass
+            return
         return menuList
 
     '''
