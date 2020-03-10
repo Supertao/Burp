@@ -298,6 +298,20 @@ class actionRunMessage(ActionListener):
         JOptionPane.showMessageDialog(None, "Clear Redis Successfully!")
 
 
+class buildRequest(threading.Thread):
+    def __init__(self, extender, httpservice, request):
+        threading.Thread.__init__(self)
+        self._extender = extender
+        self.httpservice = httpservice
+        self.request = request
+
+    def run(self):
+        try:
+            self._extender._callbacks.makeHttpRequest(self.httpservice, self.request)
+        except Exception as e:
+            print("Error", e)
+
+
 # 启动线程来完成请求的发送
 class buildHttp(threading.Thread):
     def __init__(self, threadid, extender, log, body):
@@ -704,18 +718,25 @@ class IntruderFuzz(ActionListener):
     SQL injection
     Xpath injection
     '''
-    def buildRequest(self,payload,request):
-        #insertionOffsets = ArrayList()
-        #insertionOffsets.add(array([self._bounds[0], self._bounds[1]], 'i'))
-        #python2 byte[]
-        #self._helpers.bytesToString(bodybytes)
-        request_str = self._helpers.bytesToString(request)
-        request_new=request_str[:self._bounds[0]]+payload+request_str[self._bounds[1]:]
-        self._extender._stdout.println(request_new)
-        request_byte=self._helpers.stringToBytes(request_new)
+    def getPayload(self,number):
+        self.yaml = self._extender.yamlPayload
+        self._extender._stdout.println(self.yaml[number]['payloads'])
+        request_str = self._helpers.bytesToString(self.request)
+        payloads = self.yaml['F00000']['payloads'] + self.yaml[number]['payloads']
+        for k, payload in enumerate(payloads):
+            self._extender._stdout.println("%s : %s" % (k + 1, payload))
+            request_new = request_str[:self._bounds[0]] + payload + request_str[self._bounds[1]:]
+            request_byte = self._helpers.stringToBytes(request_new)
+            rqInfo = self._helpers.analyzeRequest(request_byte)
+            headers = rqInfo.getHeaders()
+            newHeaders = list(headers)
+            self._extender._stdout.println("".join(newHeaders))
+            bodyOffset = rqInfo.getBodyOffset()
+            body = request_byte[bodyOffset:]
+            updatemessage = self._helpers.buildHttpMessage(headers, body)
+            buildRequest(self._extender, self.httpservice, updatemessage).start()
 
-    def getRequest(self):
-        requestResponse = self._selectedMessages[0]
+    def getRequest(self,requestResponse):
         self.httpservice = requestResponse.getHttpService()
         if self.httpservice.getProtocol() == "https":
             self.useHttps = True
@@ -728,7 +749,7 @@ class IntruderFuzz(ActionListener):
     def actionPerformed(self, evt):
         # 通过获取按钮的内容来做相对的响应（https://www.cnblogs.com/dengyungao/p/7525013.html）
         buttonName = evt.getActionCommand()
-        self.getRequest()
+        self.getRequest(self._selectedMessages[0])
         insertionOffsets = ArrayList()
         if self._bounds != None:
             # https://portswigger.net/burp/extender/writing-your-first-burp-suite-extension
@@ -741,18 +762,15 @@ class IntruderFuzz(ActionListener):
             self._extender._callbacks.doActiveScan(self.httpservice.getHost(), self.httpservice.getPort(), self.useHttps, self.request,
                                                    insertionOffsets)
 
-
         if buttonName == "Command Injection":
-            self.yaml=self._extender.yamlPayload
-            self._extender._stdout.println(self.yaml['F00001']['payloads'])
-            for k,payload in enumerate(self.yaml['F00001']['payloads']):
-                self.buildRequest(payload,self.request)
-                self._extender._stdout.println("%s : %s" % (k+1,payload))
-                #buildHttp(k+1, self._extender, log, payload).start()
+            self.getPayload("F00001")
 
+        if buttonName == "Path Traversal":
+            self.getPayload("F00001")
 
         if buttonName == "CSV Injection":
-            pass
+            self.getPayload("F00001")
+
         if buttonName == "XML Injection":
             pass
         if buttonName == "SQL Injection":

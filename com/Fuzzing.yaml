@@ -2,7 +2,29 @@ F00000:
   name: Common SpecialChars
   description: 特殊字符集
   level: info
-  payloads: "!@#$%^&*()_+=-|\"':;?/>.<,{}[]`"
+  payloads:
+      - "!"
+      - "$"
+      - "#"
+      - "%"
+      - "^"
+      - "&"
+      - "*"
+      - "()"
+      - "_"
+      - "+"
+      - "="
+      - "|"
+      - "\"
+      - "'"
+      - ":"
+      - ";"
+      - "?"
+      - "/"
+      - ">"
+      - "."
+      - "<"
+      - "`"
 
 F00001:
   name: Command Injections
